@@ -1,0 +1,78 @@
+name: PR Review Agent
+
+on:
+  schedule:
+    # Hourly at :07 to avoid the top-of-hour cron stampede
+    - cron: "7 * * * *"
+  workflow_dispatch:
+    inputs:
+      pr_url:
+        description: "Optional: review a single PR URL instead of enumerating"
+        required: false
+        type: string
+      dry_run:
+        description: "If true, never submit reviews or comments"
+        required: false
+        default: "false"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-review
+  cancel-in-progress: false
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # GH_PAT is a fine-grained PAT with PR read/write across the repos you
+      # want the agent to act on. Stored as a repo secret.
+      GH_TOKEN: ${{ secrets.GH_PAT }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      DRY_RUN: ${{ inputs.dry_run || 'false' }}
+      PR_URL_OVERRIDE: ${{ inputs.pr_url }}
+
+    steps:
+      - name: Checkout agent repo
+        uses: actions/checkout@v4
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Verify auth
+        run: |
+          gh auth status
+          gh api user --jq '.login'
+
+      - name: Enumerate candidate PRs
+        id: list
+        run: |
+          set -euo pipefail
+          if [ -n "${PR_URL_OVERRIDE}" ]; then
+            echo "${PR_URL_OVERRIDE}" > prs.txt
+          else
+            bash scripts/list-prs.sh > prs.txt
+          fi
+          echo "count=$(wc -l < prs.txt | tr -d ' ')" >> "$GITHUB_OUTPUT"
+          echo "--- candidate PRs ---"
+          cat prs.txt || true
+
+      - name: Review each PR
+        if: steps.list.outputs.count != '0'
+        run: |
+          set -euo pipefail
+          while IFS= read -r pr_url; do
+            [ -z "$pr_url" ] && continue
+            echo "::group::Reviewing $pr_url"
+            PR_URL="$pr_url" \
+            claude \
+              --print \
+              --permission-mode acceptEdits \
+              --allowed-tools "Bash,Read,Grep,Glob,WebFetch" \
+              "$(cat prompts/review-pr.md)" \
+              || echo "::warning::Review failed for $pr_url"
+            echo "::endgroup::"
+          done < prs.txt
