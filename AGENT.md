@@ -132,8 +132,7 @@ gh workflow run pr-review.yml --repo don-petry/self -f dry_run=false
   job timeout (~5 min per PR with 3 council members). Override:
   `gh variable set MAX_PRS --body 15 --repo don-petry/self`
 - **Models** — change model IDs in `scripts/review-one-pr.sh` (`run_member`
-  calls). Current: security=opus-4-6, correctness=sonnet-4-6,
-  maintainability=sonnet-4-6, synthesis=sonnet-4-6.
+  calls and the synthesis invocation). See the script for current assignments.
 
 ## Cost
 

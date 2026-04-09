@@ -30,9 +30,12 @@ export PR_HEAD_SHA
 echo "    head SHA: $PR_HEAD_SHA"
 
 # 2. Idempotency: look for our marker at this SHA in existing reviews+comments
+# Extract the most recent SHA from our review marker in existing PR comments/reviews.
+# Uses (array + array) to concatenate safely when either is empty, then iterates
+# .body with null guard. The 2>/dev/null catches GraphQL field-access errors.
 EXISTING_MARKER_SHA=$(
   gh pr view "$PR_URL" --json reviews,comments \
-    --jq '[(.reviews // [])[] | .body // empty, (.comments // [])[] | .body // empty] | .[] | select(. != null)' 2>/dev/null \
+    --jq '((.reviews // []) + (.comments // [])) | .[].body | select(. != null)' 2>/dev/null \
   | grep -oE '<!-- pr-review-agent v1 sha=[a-f0-9]+' \
   | grep -oE '[a-f0-9]+$' \
   | tail -1 || true
