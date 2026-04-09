@@ -58,8 +58,13 @@ run_member() {
   local prompt_path="$3"
   local out="/tmp/council/${lens}.json"
   local log="/tmp/council/${lens}.log"
+  local prompt_file="/tmp/council/${lens}.prompt"
 
-  echo "    [start] $lens ($model)"
+  cat prompts/shared.md "$prompt_path" > "$prompt_file"
+  local prompt_bytes
+  prompt_bytes=$(wc -c < "$prompt_file")
+  echo "    [start] $lens ($model) prompt=${prompt_bytes}b"
+
   LENS="$lens" \
   OUTPUT_FILE="$out" \
   claude \
@@ -67,18 +72,18 @@ run_member() {
     --model "$model" \
     --permission-mode acceptEdits \
     --allowed-tools "Bash,Read,Grep,Glob" \
-    "$(cat prompts/shared.md "$prompt_path")" \
+    < "$prompt_file" \
     > "$log" 2>&1
-  echo "    [done]  $lens"
+  local rc=$?
+  echo "    [done]  $lens (rc=$rc)"
+  return $rc
 }
 
-export -f run_member
-
-run_member security      claude-opus-4-6              prompts/council/security.md       &
+run_member security        claude-opus-4-6           prompts/council/security.md        &
 PID_SEC=$!
-run_member correctness   claude-sonnet-4-6            prompts/council/correctness.md    &
+run_member correctness     claude-sonnet-4-6         prompts/council/correctness.md     &
 PID_COR=$!
-run_member maintainability claude-haiku-4-5-20251001  prompts/council/maintainability.md &
+run_member maintainability claude-haiku-4-5-20251001 prompts/council/maintainability.md &
 PID_MAI=$!
 
 FAILED=0
@@ -113,6 +118,6 @@ claude \
   --model claude-sonnet-4-6 \
   --permission-mode acceptEdits \
   --allowed-tools "Bash,Read,Grep,Glob" \
-  "$(cat prompts/synthesize.md)"
+  < prompts/synthesize.md
 
 echo "    [done]  $PR_URL"
