@@ -75,13 +75,16 @@ and (if `$DRY_RUN` is `false`) post a PR review.
    Decide whether to delegate to Claude or to a human:
    - If `$CLAUDE_ENABLED` is `true` AND `$REVIEW_CYCLE` < `$MAX_REVIEW_CYCLES`
      AND `final_risk` is NOT `HIGH`:
-     → **Delegate to @claude** (step 9a).
+     → **Delegate to Claude** (step 9a).
    - Otherwise:
      → **Escalate to human** (step 9b).
-   9a. **Delegate to @claude**: post a SEPARATE issue comment (NOT a review,
+   9a. **Delegate to Claude**: post a SEPARATE issue comment (NOT a review,
        use `gh api -X POST "repos/<owner>/<repo>/issues/<num>/comments"`)
-       with a body that:
-       - Tags `@claude` on the first line so the Claude GitHub App picks it up.
+       with actionable fix instructions. The repo has a Claude workflow
+       trigger that listens to all non-Claude comments, so Claude will
+       automatically pick up the comment — no `@claude` tag needed.
+
+       The comment MUST be clearly structured so Claude can act on it:
        - Lists EVERY finding from the council that has severity `minor`,
          `major`, or `critical` — with exact file paths, line numbers, and
          what needs to change.
@@ -94,22 +97,24 @@ and (if `$DRY_RUN` is `false`) post a PR review.
        - The comment must follow this template:
 
        ```
-       @claude Please fix the following findings from the automated review council and resolve all outstanding review comments on this PR:
+       ## Review council — fix requested (cycle <REVIEW_CYCLE + 1>/<MAX_REVIEW_CYCLES>)
 
-       ## Council findings to address
+       The automated review council identified the following issues. Please address each one:
+
+       ### Findings to fix
 
        <for each finding with severity minor/major/critical:>
        - **[<severity>]** `<file>:<line>` — <message>
        <end for>
 
-       ## Additional instructions
+       ### Additional tasks
 
        1. Resolve all unresolved review thread comments from other reviewers (CodeRabbit, Copilot, etc.)
        2. Ensure all CI checks pass after your changes
        3. Rebase on `<baseRefName>` if the branch is behind
        4. Do NOT modify files unrelated to the findings above
 
-       Once all fixes are pushed, the review council will automatically re-review on the next cycle.
+       _The review council will automatically re-review after new commits are pushed._
        ```
 
        After posting, do NOT add `needs-human-review` label (Claude is handling it).
