@@ -77,7 +77,53 @@ fi
 export CLAUDE_ENABLED
 echo "    claude delegation: $CLAUDE_ENABLED (org: $PR_ORG)"
 
-# 3. Run council in parallel
+# 3. Determine review mode based on PR size and prior review history.
+#    - "small"       : PR has < SMALL_PR_THRESHOLD lines changed → single Opus call
+#    - "incremental" : prior review exists at different SHA → single Opus call with prior context
+#    - "full"        : first review of a non-small PR → 3-member council + synthesizer
+SMALL_PR_THRESHOLD="${SMALL_PR_THRESHOLD:-10}"
+PR_SIZE=$(gh pr view "$PR_URL" --json additions,deletions --jq '.additions + .deletions')
+export PR_SIZE
+
+if [ "$PR_SIZE" -lt "$SMALL_PR_THRESHOLD" ]; then
+  REVIEW_MODE="small"
+elif [ -n "${EXISTING_MARKER_SHA:-}" ]; then
+  REVIEW_MODE="incremental"
+else
+  REVIEW_MODE="full"
+fi
+export REVIEW_MODE
+echo "    mode: $REVIEW_MODE (${PR_SIZE} lines, threshold: $SMALL_PR_THRESHOLD)"
+
+# For incremental mode, extract the prior review body so the single reviewer
+# can see what was previously flagged and check if issues are resolved.
+if [ "$REVIEW_MODE" = "incremental" ]; then
+  PRIOR_REVIEW_SHA="$EXISTING_MARKER_SHA"
+  export PRIOR_REVIEW_SHA
+  # Extract the full body of the review/comment containing our marker for the prior SHA.
+  PRIOR_REVIEW_BODY=$(
+    gh pr view "$PR_URL" --json reviews,comments \
+      --jq "((.reviews // []) + (.comments // [])) | .[].body | select(. != null) | select(test(\"sha=$PRIOR_REVIEW_SHA\"))" 2>/dev/null \
+    | head -1 || true
+  )
+  export PRIOR_REVIEW_BODY
+  echo "    prior review SHA: $PRIOR_REVIEW_SHA (body: ${#PRIOR_REVIEW_BODY} chars)"
+fi
+
+# --- Single-reviewer mode (small PR or incremental re-review) ---
+if [ "$REVIEW_MODE" != "full" ]; then
+  echo "    [single] opus (mode=$REVIEW_MODE)"
+  claude \
+    --print \
+    --model claude-opus-4-6 \
+    --permission-mode acceptEdits \
+    --allowed-tools "Bash,Read,Grep,Glob" \
+    < prompts/single-review.md
+  echo "    [done]  $PR_URL"
+  exit 0
+fi
+
+# --- Full council mode (first review of a non-small PR) ---
 mkdir -p /tmp/council
 rm -f /tmp/council/*.json /tmp/council/*.log
 

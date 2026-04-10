@@ -45,7 +45,16 @@ quality gates, and escalates high-risk or gated PRs for human review.
      delegation without resolution, the agent stops delegating and escalates
      to human to prevent infinite loops.
 
-5. **Idempotency + iterative review cycles** — every posted review starts with
+5. **Review mode optimization** — the agent picks the cheapest review path:
+   - **Small PR** (<10 lines, configurable via `SMALL_PR_THRESHOLD`): single
+     Opus call instead of 3-member council + synth (1 invocation vs 4).
+   - **Incremental re-review** (prior marker exists at a different SHA): single
+     Opus call that reads the prior review and focuses on what changed. Checks
+     whether prior findings are resolved and flags any new issues.
+   - **Full council** (first review of a non-small PR): 3 parallel members +
+     synthesizer (the original path).
+
+6. **Idempotency + iterative review cycles** — every posted review starts with
    an HTML marker on line 1:
 
    ```
@@ -149,6 +158,9 @@ gh workflow run pr-review.yml --repo don-petry/self -f dry_run=false
 - **Max review cycles** — how many times the agent tags @claude before
   escalating to human (default 3):
   `gh variable set MAX_REVIEW_CYCLES --body 5 --repo don-petry/self`
+- **Small PR threshold** — PRs with fewer lines than this skip the council
+  and use a single Opus call (default 10):
+  `gh variable set SMALL_PR_THRESHOLD --body 20 --repo don-petry/self`
 - **Max PRs per run** — defaults to 10 per cron tick to stay within the 60-min
   job timeout (~5 min per PR with 3 council members). Override:
   `gh variable set MAX_PRS --body 15 --repo don-petry/self`
