@@ -51,6 +51,32 @@ if [ -n "${EXISTING_MARKER_SHA:-}" ]; then
   echo "    re-review: prior marker was $EXISTING_MARKER_SHA, head is $PR_HEAD_SHA"
 fi
 
+# Count how many review cycles we've already done on this PR (number of distinct markers).
+# This prevents infinite @claude delegation loops.
+REVIEW_CYCLE=$(
+  gh pr view "$PR_URL" --json reviews,comments \
+    --jq '((.reviews // []) + (.comments // [])) | .[].body | select(. != null)' 2>/dev/null \
+  | grep -cE '<!-- pr-review-agent v1 sha=[a-f0-9]+' || echo 0
+)
+export REVIEW_CYCLE
+echo "    review cycle: $REVIEW_CYCLE (max: ${MAX_REVIEW_CYCLES:-3})"
+
+# Detect if the PR's repo org has Claude App (for @claude delegation).
+PR_ORG=$(echo "$PR_URL" | sed -E 's|https://github.com/([^/]+)/.*|\1|')
+export PR_ORG
+CLAUDE_ENABLED=false
+if [ -n "${CLAUDE_ORGS:-}" ]; then
+  IFS=',' read -ra ORG_LIST <<< "$CLAUDE_ORGS"
+  for org in "${ORG_LIST[@]}"; do
+    if [ "$(echo "$org" | tr -d ' ')" = "$PR_ORG" ]; then
+      CLAUDE_ENABLED=true
+      break
+    fi
+  done
+fi
+export CLAUDE_ENABLED
+echo "    claude delegation: $CLAUDE_ENABLED (org: $PR_ORG)"
+
 # 3. Run council in parallel
 mkdir -p /tmp/council
 rm -f /tmp/council/*.json /tmp/council/*.log
