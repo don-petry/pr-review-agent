@@ -16,9 +16,11 @@ is small or this is a re-review after a prior council review.
 - `$CLAUDE_ENABLED` — `true` or `false` (repo org has Claude App).
 - `$REVIEW_CYCLE` — integer, number of prior review cycles.
 - `$MAX_REVIEW_CYCLES` — integer, max cycles before human escalation.
-- `$REVIEW_MODE` — `small` or `incremental`.
-- `$PRIOR_REVIEW_BODY` — (incremental mode only) the body of the most recent
-  prior review from the council, so you can see what was previously flagged.
+- `$REVIEW_MODE` — `small`, `incremental`, or `triage-approved`.
+- `$PRIOR_REVIEW_BODY` — (incremental mode only) a truncated summary of the
+  most recent prior review body (full text available in `$PRIOR_REVIEW_FILE`).
+- `$PRIOR_REVIEW_FILE` — (incremental mode only) path to a file containing
+  the full body of the most recent prior review from the council.
 - `$PRIOR_REVIEW_SHA` — (incremental mode only) the SHA that was previously
   reviewed.
 
@@ -32,12 +34,14 @@ You review **exactly one pull request**: `$PR_URL`. Nothing else.
 
 ## Context-gathering
 
-1. `gh pr view "$PR_URL" --json number,title,body,author,isDraft,baseRefName,headRefName,headRefOid,url,repository,labels,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,reviewRequests,reviews,comments,commits,closingIssuesReferences,additions,deletions,changedFiles,files`
+1. `gh pr view "$PR_URL" --json number,title,body,author,isDraft,baseRefName,headRefName,headRefOid,url,headRepository,headRepositoryOwner,labels,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,reviewRequests,reviews,comments,commits,closingIssuesReferences,additions,deletions,changedFiles,files`
    - If `isDraft` → skip. Print `{"pr":"...","decision":"skip","reason":"draft"}` and exit.
    - Verify `headRefOid == $PR_HEAD_SHA`. If not → skip with `"reason":"head-sha-changed"`.
 2. `gh pr diff "$PR_URL"` — read the diff.
-   - **Incremental mode**: also get the diff since the prior review:
-     `gh api "repos/<owner>/<repo>/compare/$PRIOR_REVIEW_SHA...$PR_HEAD_SHA" --jq '.commits[].commit.message, .files[].filename'`
+   - **Incremental mode**: also get the diff since the prior review. Derive
+     `<owner>` and `<repo>` from the `headRepository` field in the PR metadata
+     (i.e., `headRepository.owner.login` and `headRepository.name`):
+     `gh api "repos/{owner}/{repo}/compare/$PRIOR_REVIEW_SHA...$PR_HEAD_SHA" --jq '.commits[].commit.message, .files[].filename'`
      to understand what changed since last review. Focus your analysis on
      what's new.
 3. Fetch linked issues (same as shared.md).
@@ -73,6 +77,14 @@ Approve only if ALL:
 
 Otherwise → escalate.
 
+### Triage-approved mode
+
+When `$REVIEW_MODE` is `triage-approved`, the Haiku triage tier already cleared
+this PR as low-risk. Your job is a brief confirmation review — verify the
+triage assessment is correct, check for anything Haiku may have missed, and
+approve if everything looks good. Treat this like a `small` review but note
+the mode as `triage-approved` in your output.
+
 ### Incremental mode adjustments
 
 When `$REVIEW_MODE` is `incremental`, your job is to determine if the new
@@ -95,7 +107,7 @@ Compose a review body with the same template:
 
 **Risk:** <risk>
 **Reviewed commit:** `<SHA>`
-**Review mode:** <small-pr|incremental> (single reviewer)
+**Review mode:** <small-pr|incremental|triage-approved> (single reviewer)
 
 ### Summary
 <2-4 sentences>
@@ -126,7 +138,7 @@ Then act:
 - If escalating:
   - If `$CLAUDE_ENABLED` is `true` AND `$REVIEW_CYCLE` < `$MAX_REVIEW_CYCLES`
     AND risk is NOT `HIGH`:
-    Post a fix-request issue comment (see synthesize.md step 9a for template).
+    Post a fix-request issue comment (see cascade-action.md step 5 escalation template).
   - Otherwise: add `needs-human-review` label, re-request don-petry as reviewer.
 
 After acting, print:

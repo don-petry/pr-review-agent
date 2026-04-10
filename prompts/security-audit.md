@@ -28,7 +28,7 @@ reviewer, called only for PRs with real concerns.
 
 1. Read `$TRIAGE_RESULT` (Haiku's signals) and the Sonnet verdict at
    `$SONNET_RESULT` (its findings, risk, and reasoning).
-2. `gh pr view "$PR_URL" --json number,title,body,author,isDraft,baseRefName,headRefName,headRefOid,url,repository,labels,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,reviewRequests,reviews,comments,commits,closingIssuesReferences,additions,deletions,changedFiles,files`
+2. `gh pr view "$PR_URL" --json number,title,body,author,isDraft,baseRefName,headRefName,headRefOid,url,headRepository,headRepositoryOwner,labels,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,reviewRequests,reviews,comments,commits,closingIssuesReferences,additions,deletions,changedFiles,files`
 3. `gh pr diff "$PR_URL"` — read the diff. Focus on the areas Sonnet flagged.
 4. Fetch linked issues if any.
 5. Read any CONTRIBUTING.md, AGENTS.md, CODEOWNERS in the repo to check

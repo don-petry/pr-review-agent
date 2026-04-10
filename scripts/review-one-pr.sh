@@ -78,18 +78,32 @@ export CLAUDE_ENABLED
 echo "    claude delegation: $CLAUDE_ENABLED (org: $PR_ORG)"
 
 # For re-reviews, extract the prior review body for context.
+# Write to a temp file to avoid hitting OS env size limits (E2BIG) on large reviews.
 PRIOR_REVIEW_BODY=""
 PRIOR_REVIEW_SHA=""
+PRIOR_REVIEW_FILE="/tmp/cascade/prior-review-body.txt"
+mkdir -p /tmp/cascade
 if [ -n "${EXISTING_MARKER_SHA:-}" ]; then
   PRIOR_REVIEW_SHA="$EXISTING_MARKER_SHA"
   PRIOR_REVIEW_BODY=$(
     gh pr view "$PR_URL" --json reviews,comments \
       --jq "((.reviews // []) + (.comments // [])) | .[].body | select(. != null) | select(test(\"sha=$PRIOR_REVIEW_SHA\"))" 2>/dev/null \
-    | head -1 || true
+    | tail -1 || true
   )
+  # Validate that the matched body actually contains our marker to reduce
+  # prompt-injection surface area.
+  if [ -n "$PRIOR_REVIEW_BODY" ] && ! echo "$PRIOR_REVIEW_BODY" | grep -qE '<!-- pr-review-agent v1 sha=[a-f0-9]+ -->'; then
+    echo "    prior review body missing valid marker, discarding"
+    PRIOR_REVIEW_BODY=""
+  fi
   echo "    prior review: SHA=$PRIOR_REVIEW_SHA body=${#PRIOR_REVIEW_BODY}chars"
+  if [ -n "$PRIOR_REVIEW_BODY" ]; then
+    echo "$PRIOR_REVIEW_BODY" > "$PRIOR_REVIEW_FILE"
+  fi
 fi
-export PRIOR_REVIEW_BODY PRIOR_REVIEW_SHA
+export PRIOR_REVIEW_SHA PRIOR_REVIEW_FILE
+# Export a truncated summary for env; full body is in PRIOR_REVIEW_FILE.
+export PRIOR_REVIEW_BODY="${PRIOR_REVIEW_BODY:0:4000}"
 
 # ==========================================================================
 # 3. Cascading review: Haiku triage → Sonnet deep review → Opus security audit
@@ -102,7 +116,7 @@ mkdir -p /tmp/cascade
 echo "    [tier1] haiku triage"
 
 # Pre-fetch all context so Haiku needs no tool access.
-PR_METADATA=$(gh pr view "$PR_URL" --json number,title,body,author,isDraft,baseRefName,headRefName,headRefOid,url,repository,labels,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,reviewRequests,reviews,comments,commits,closingIssuesReferences,additions,deletions,changedFiles,files 2>/dev/null || echo '{}')
+PR_METADATA=$(gh pr view "$PR_URL" --json number,title,body,author,isDraft,baseRefName,headRefName,headRefOid,url,headRepository,headRepositoryOwner,labels,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,reviewRequests,reviews,comments,commits,closingIssuesReferences,additions,deletions,changedFiles,files 2>/dev/null || echo '{}')
 export PR_METADATA
 
 PR_DIFF=$(gh pr diff "$PR_URL" 2>/dev/null | head -3000 || echo "")
@@ -156,9 +170,7 @@ claude \
   --permission-mode acceptEdits \
   --allowed-tools "Bash,Read,Grep,Glob" \
   < prompts/deep-review.md \
-  > /tmp/cascade/sonnet.log 2>&1
-SONNET_RC=$?
-
+  > /tmp/cascade/sonnet.log 2>&1 || true
 if [ ! -s "$OUTPUT_FILE" ] || ! jq empty "$OUTPUT_FILE" 2>/dev/null; then
   echo "::warning::sonnet did not produce valid JSON at $OUTPUT_FILE"
   cat /tmp/cascade/sonnet.log || true

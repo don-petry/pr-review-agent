@@ -29,7 +29,7 @@ enumeration. No actions on other PRs.
 
 1. Read `$TRIAGE_RESULT` to understand why triage escalated — focus your
    review on those signals.
-2. `gh pr view "$PR_URL" --json number,title,body,author,isDraft,baseRefName,headRefName,headRefOid,url,repository,labels,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,reviewRequests,reviews,comments,commits,closingIssuesReferences,additions,deletions,changedFiles,files`
+2. `gh pr view "$PR_URL" --json number,title,body,author,isDraft,baseRefName,headRefName,headRefOid,url,headRepository,headRepositoryOwner,labels,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,reviewRequests,reviews,comments,commits,closingIssuesReferences,additions,deletions,changedFiles,files`
 3. `gh pr diff "$PR_URL"` — read the diff.
 4. Fetch linked issues if any.
 5. Check `statusCheckRollup` for CI status.
