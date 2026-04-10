@@ -77,42 +77,65 @@ fi
 export CLAUDE_ENABLED
 echo "    claude delegation: $CLAUDE_ENABLED (org: $PR_ORG)"
 
-# 3. Determine review mode based on PR size and prior review history.
-#    - "small"       : PR has < SMALL_PR_THRESHOLD lines changed → single Opus call
-#    - "incremental" : prior review exists at different SHA → single Opus call with prior context
-#    - "full"        : first review of a non-small PR → 3-member council + synthesizer
-SMALL_PR_THRESHOLD="${SMALL_PR_THRESHOLD:-10}"
-PR_SIZE=$(gh pr view "$PR_URL" --json additions,deletions --jq '.additions + .deletions')
-export PR_SIZE
-
-if [ "$PR_SIZE" -lt "$SMALL_PR_THRESHOLD" ]; then
-  REVIEW_MODE="small"
-elif [ -n "${EXISTING_MARKER_SHA:-}" ]; then
-  REVIEW_MODE="incremental"
-else
-  REVIEW_MODE="full"
-fi
-export REVIEW_MODE
-echo "    mode: $REVIEW_MODE (${PR_SIZE} lines, threshold: $SMALL_PR_THRESHOLD)"
-
-# For incremental mode, extract the prior review body so the single reviewer
-# can see what was previously flagged and check if issues are resolved.
-if [ "$REVIEW_MODE" = "incremental" ]; then
+# For re-reviews, extract the prior review body for context.
+PRIOR_REVIEW_BODY=""
+PRIOR_REVIEW_SHA=""
+if [ -n "${EXISTING_MARKER_SHA:-}" ]; then
   PRIOR_REVIEW_SHA="$EXISTING_MARKER_SHA"
-  export PRIOR_REVIEW_SHA
-  # Extract the full body of the review/comment containing our marker for the prior SHA.
   PRIOR_REVIEW_BODY=$(
     gh pr view "$PR_URL" --json reviews,comments \
       --jq "((.reviews // []) + (.comments // [])) | .[].body | select(. != null) | select(test(\"sha=$PRIOR_REVIEW_SHA\"))" 2>/dev/null \
     | head -1 || true
   )
-  export PRIOR_REVIEW_BODY
-  echo "    prior review SHA: $PRIOR_REVIEW_SHA (body: ${#PRIOR_REVIEW_BODY} chars)"
+  echo "    prior review: SHA=$PRIOR_REVIEW_SHA body=${#PRIOR_REVIEW_BODY}chars"
+fi
+export PRIOR_REVIEW_BODY PRIOR_REVIEW_SHA
+
+# ==========================================================================
+# 3. Cascading review: Haiku triage → Sonnet deep review → Opus security audit
+#    Each tier only fires if the previous one escalated.
+# ==========================================================================
+
+mkdir -p /tmp/cascade
+
+# --- Tier 1: Haiku triage (no tools, pre-fetched context) ---
+echo "    [tier1] haiku triage"
+
+# Pre-fetch all context so Haiku needs no tool access.
+PR_METADATA=$(gh pr view "$PR_URL" --json number,title,body,author,isDraft,baseRefName,headRefName,headRefOid,url,repository,labels,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,reviewRequests,reviews,comments,commits,closingIssuesReferences,additions,deletions,changedFiles,files 2>/dev/null || echo '{}')
+export PR_METADATA
+
+PR_DIFF=$(gh pr diff "$PR_URL" 2>/dev/null | head -3000 || echo "")
+export PR_DIFF
+
+export REVIEW_MODE="triage"
+
+TRIAGE_LOG="/tmp/cascade/triage.log"
+TRIAGE_RESULT=$(
+  claude \
+    --print \
+    --model claude-haiku-4-5-20251001 \
+    --permission-mode plan \
+    < prompts/triage.md 2>"$TRIAGE_LOG"
+) || true
+
+# Validate triage output is JSON
+if ! echo "$TRIAGE_RESULT" | jq empty 2>/dev/null; then
+  echo "    [tier1] haiku returned non-JSON, escalating by default"
+  echo "    haiku output: $TRIAGE_RESULT"
+  TRIAGE_RESULT='{"escalate":true,"risk":"MEDIUM","signals":["triage-output-invalid"],"summary":"triage failed, escalating"}'
 fi
 
-# --- Single-reviewer mode (small PR or incremental re-review) ---
-if [ "$REVIEW_MODE" != "full" ]; then
-  echo "    [single] opus (mode=$REVIEW_MODE)"
+export TRIAGE_RESULT
+TRIAGE_ESCALATE=$(echo "$TRIAGE_RESULT" | jq -r '.escalate')
+TRIAGE_RISK=$(echo "$TRIAGE_RESULT" | jq -r '.risk')
+TRIAGE_SIGNALS=$(echo "$TRIAGE_RESULT" | jq -r '.signals | join(", ")')
+echo "    [tier1] escalate=$TRIAGE_ESCALATE risk=$TRIAGE_RISK signals=[$TRIAGE_SIGNALS]"
+
+# If triage says no concerns → use single-review prompt (Haiku approved, Opus confirms briefly)
+if [ "$TRIAGE_ESCALATE" = "false" ]; then
+  echo "    [approve] haiku cleared — running single Opus confirmation"
+  export REVIEW_MODE="triage-approved"
   claude \
     --print \
     --model claude-opus-4-6 \
@@ -123,76 +146,82 @@ if [ "$REVIEW_MODE" != "full" ]; then
   exit 0
 fi
 
-# --- Full council mode (first review of a non-small PR) ---
-mkdir -p /tmp/council
-rm -f /tmp/council/*.json /tmp/council/*.log
-
-run_member() {
-  local lens="$1"
-  local model="$2"
-  local prompt_path="$3"
-  local out="/tmp/council/${lens}.json"
-  local log="/tmp/council/${lens}.log"
-  local prompt_file="/tmp/council/${lens}.prompt"
-
-  cat prompts/shared.md "$prompt_path" > "$prompt_file"
-  local prompt_bytes
-  prompt_bytes=$(wc -c < "$prompt_file")
-  echo "    [start] $lens ($model) prompt=${prompt_bytes}b"
-
-  LENS="$lens" \
-  OUTPUT_FILE="$out" \
-  claude \
-    --print \
-    --model "$model" \
-    --permission-mode acceptEdits \
-    --allowed-tools "Bash,Read,Grep,Glob" \
-    < "$prompt_file" \
-    > "$log" 2>&1
-  local rc=$?
-  echo "    [done]  $lens (rc=$rc)"
-  return $rc
-}
-
-run_member security        claude-opus-4-6           prompts/council/security.md        &
-PID_SEC=$!
-run_member correctness     claude-sonnet-4-6         prompts/council/correctness.md     &
-PID_COR=$!
-run_member maintainability claude-sonnet-4-6 prompts/council/maintainability.md &
-PID_MAI=$!
-
-FAILED=0
-wait "$PID_SEC" || { echo "::warning::security council member failed"; FAILED=1; }
-wait "$PID_COR" || { echo "::warning::correctness council member failed"; FAILED=1; }
-wait "$PID_MAI" || { echo "::warning::maintainability council member failed"; FAILED=1; }
-
-# Verify each member produced parseable JSON
-for lens in security correctness maintainability; do
-  f="/tmp/council/${lens}.json"
-  if [ ! -s "$f" ]; then
-    echo "::warning::$lens did not produce $f"
-    echo "--- $lens log ---"
-    cat "/tmp/council/${lens}.log" || true
-    FAILED=1
-  elif ! jq empty "$f" 2>/dev/null; then
-    echo "::warning::$lens produced invalid JSON in $f"
-    cat "$f"
-    FAILED=1
-  fi
-done
-
-if [ "$FAILED" -ne 0 ]; then
-  echo "::error::council had failures, skipping synthesis for $PR_URL"
-  exit 1
-fi
-
-# 4. Synthesize and (maybe) post
-echo "    [synth]"
+# --- Tier 2: Sonnet deep review ---
+echo "    [tier2] sonnet deep review"
+OUTPUT_FILE="/tmp/cascade/sonnet.json"
+export OUTPUT_FILE
 claude \
   --print \
   --model claude-sonnet-4-6 \
   --permission-mode acceptEdits \
   --allowed-tools "Bash,Read,Grep,Glob" \
-  < prompts/synthesize.md
+  < prompts/deep-review.md \
+  > /tmp/cascade/sonnet.log 2>&1
+SONNET_RC=$?
+
+if [ ! -s "$OUTPUT_FILE" ] || ! jq empty "$OUTPUT_FILE" 2>/dev/null; then
+  echo "::warning::sonnet did not produce valid JSON at $OUTPUT_FILE"
+  cat /tmp/cascade/sonnet.log || true
+  echo "::error::cascade failed at tier 2 for $PR_URL"
+  exit 1
+fi
+
+SONNET_ESCALATE=$(jq -r '.escalate_to_opus' "$OUTPUT_FILE")
+SONNET_DECISION=$(jq -r '.decision' "$OUTPUT_FILE")
+SONNET_RISK=$(jq -r '.risk' "$OUTPUT_FILE")
+echo "    [tier2] escalate_to_opus=$SONNET_ESCALATE decision=$SONNET_DECISION risk=$SONNET_RISK"
+
+# If Sonnet approves or escalates without needing Opus → go straight to action
+if [ "$SONNET_ESCALATE" != "true" ]; then
+  echo "    [action] sonnet resolved — posting review"
+  FINAL_RESULT="$OUTPUT_FILE"
+  export FINAL_RESULT
+  export FINAL_TIER="sonnet"
+  claude \
+    --print \
+    --model claude-sonnet-4-6 \
+    --permission-mode acceptEdits \
+    --allowed-tools "Bash,Read,Grep,Glob" \
+    < prompts/cascade-action.md
+  echo "    [done]  $PR_URL"
+  exit 0
+fi
+
+# --- Tier 3: Opus security audit ---
+echo "    [tier3] opus security audit"
+SONNET_RESULT="$OUTPUT_FILE"
+export SONNET_RESULT
+OUTPUT_FILE="/tmp/cascade/opus.json"
+export OUTPUT_FILE
+claude \
+  --print \
+  --model claude-opus-4-6 \
+  --permission-mode acceptEdits \
+  --allowed-tools "Bash,Read,Grep,Glob" \
+  < prompts/security-audit.md \
+  > /tmp/cascade/opus.log 2>&1
+
+if [ ! -s "$OUTPUT_FILE" ] || ! jq empty "$OUTPUT_FILE" 2>/dev/null; then
+  echo "::warning::opus did not produce valid JSON at $OUTPUT_FILE"
+  cat /tmp/cascade/opus.log || true
+  echo "::error::cascade failed at tier 3 for $PR_URL"
+  exit 1
+fi
+
+OPUS_DECISION=$(jq -r '.decision' "$OUTPUT_FILE")
+OPUS_RISK=$(jq -r '.risk' "$OUTPUT_FILE")
+echo "    [tier3] decision=$OPUS_DECISION risk=$OPUS_RISK"
+
+# Opus makes the final call — post the review
+echo "    [action] opus resolved — posting review"
+FINAL_RESULT="$OUTPUT_FILE"
+export FINAL_RESULT
+export FINAL_TIER="opus"
+claude \
+  --print \
+  --model claude-sonnet-4-6 \
+  --permission-mode acceptEdits \
+  --allowed-tools "Bash,Read,Grep,Glob" \
+  < prompts/cascade-action.md
 
 echo "    [done]  $PR_URL"
