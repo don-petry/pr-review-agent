@@ -75,7 +75,38 @@ Two automated GitHub Actions agents for don-petry's repos:
 
 ## Feature Ideation Agent
 
-### How it works
+Stress-tests feature ideas using an adversarial loop: Claude proposes a spec,
+Codex challenges it, Claude refines, iterate until approved (max 5 rounds).
+
+Pattern inspired by: <https://github.com/topics/adversarial-review>
+
+### Two modes
+
+| Mode | When to use |
+|---|---|
+| **Interactive (`SKILL.md`)** | Use during development — invoke `/ideate-feature` in Claude Code with any idea, issue URL, or spec file |
+| **Automated (GitHub Actions)** | Use for GitHub issue triage — fires when the `feature-idea` label is added, posts a refined spec as an issue comment |
+
+### Interactive mode (Claude Code skill)
+
+Follow the install instructions in [`SKILL.md`](SKILL.md). Once installed:
+
+```
+/ideate-feature <description or issue URL>
+```
+
+Claude proposes a spec → Codex adversarially challenges it → Claude refines →
+repeat up to 5 rounds until the spec is approved.
+
+```
+Claude (propose)
+  └─ Codex (adversarial challenge)
+       └─ Claude (refine spec)
+            └─ Codex (re-review)
+                 └─ ... → VERDICT: APPROVED
+```
+
+### Automated mode (GitHub Actions)
 
 1. **Trigger** — `.github/workflows/feature-ideation.yml` fires when the
    `feature-idea` label is added to any issue, or on `workflow_dispatch` with
@@ -93,13 +124,6 @@ Two automated GitHub Actions agents for don-petry's repos:
    a refined spec, and posts a structured comment on the issue. Also adds the
    `feature-spec-ready` label when the spec is actionable.
 
-```
-feature-idea label added
-  └─ Proposer (Sonnet): expand idea → proposal.json
-       └─ Challenger (Sonnet): adversarial critique → challenges.json
-            └─ Synthesizer (Opus): reconcile → post refined spec to issue
-```
-
 **Idempotency** — each posted comment starts with:
 
 ```
@@ -107,8 +131,6 @@ feature-idea label added
 ```
 
 Re-labeling the issue after editing it triggers a new cycle (N+1).
-
-### Triggering ideation
 
 ```bash
 # Automatically: add the 'feature-idea' label to an issue on any repo
@@ -162,7 +184,21 @@ gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo don-petry/self
 
 (Paste the token when prompted, then Ctrl+D.)
 
-### 3. Test with a dry run
+### 3. Install the feature ideation skill (optional, for interactive use)
+
+Requires [OpenAI Codex CLI](https://github.com/openai/codex):
+
+```bash
+npm install -g @openai/codex
+# Set OPENAI_API_KEY in your environment
+
+# Symlink the skill into Claude Code's skills directory
+ln -s "$(pwd)" ~/.agents/skills/feature-ideation
+```
+
+After symlinking, invoke with `/ideate-feature` in Claude Code.
+
+### 4. Test with a dry run
 
 ```
 gh workflow run pr-review.yml --repo don-petry/self -f dry_run=true
