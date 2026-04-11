@@ -1,0 +1,59 @@
+name: Feature Ideation Agent
+
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue_url:
+        description: "Issue URL to run ideation on"
+        required: true
+        type: string
+      dry_run:
+        description: "If true, never post comments or add labels"
+        required: false
+        default: "false"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: feature-ideation-${{ github.event.issue.number || inputs.issue_url }}
+  cancel-in-progress: false
+
+jobs:
+  ideate:
+    # Run when the 'feature-idea' label is added to an issue, or on manual dispatch.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issues' && github.event.label.name == 'feature-idea')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ secrets.GH_PAT }}
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      # Default to dry-run unless LIVE_MODE is set (shares the same variable as
+      # the PR review agent so a single toggle controls both agents).
+      DRY_RUN: ${{ inputs.dry_run || (vars.LIVE_MODE == 'true' && 'false' || 'true') }}
+      ISSUE_URL_OVERRIDE: ${{ inputs.issue_url || github.event.issue.html_url }}
+
+    steps:
+      - name: Checkout agent repo
+        uses: actions/checkout@v5
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Verify auth
+        run: |
+          gh auth status
+          gh api user --jq '.login'
+
+      - name: Run feature ideation
+        run: |
+          set -euo pipefail
+          echo "::group::Ideating $ISSUE_URL_OVERRIDE"
+          bash scripts/ideate-feature.sh \
+            || echo "::warning::Ideation failed for $ISSUE_URL_OVERRIDE"
+          echo "::endgroup::"
