@@ -1,8 +1,15 @@
-# PR Review Agent
+# Automation Agents
 
-A scheduled GitHub Action that reviews open PRs on don-petry's behalf.
-Runs hourly, classifies risk, auto-approves low/medium-risk PRs that pass all
-quality gates, and escalates high-risk or gated PRs for human review.
+Two automated GitHub Actions agents for don-petry's repos:
+
+1. **PR Review Agent** — reviews open PRs on don-petry's behalf. Runs hourly,
+   classifies risk, auto-approves low/medium-risk PRs that pass all quality
+   gates, and escalates high-risk or gated PRs for human review.
+
+2. **Feature Ideation Agent** — adversarially evaluates feature ideas posted
+   as GitHub issues. Add the `feature-idea` label to trigger a proposer →
+   challenger → synthesizer loop that produces a refined, implementation-ready
+   spec directly on the issue.
 
 ## How it works
 
@@ -66,6 +73,55 @@ quality gates, and escalates high-risk or gated PRs for human review.
    knows the PR has new commits since the last review and runs the council
    again — handling iterative review cycles cleanly.
 
+## Feature Ideation Agent
+
+### How it works
+
+1. **Trigger** — `.github/workflows/feature-ideation.yml` fires when the
+   `feature-idea` label is added to any issue, or on `workflow_dispatch` with
+   an explicit issue URL.
+2. **Proposer (Sonnet)** — reads the issue title and body, scans the repo for
+   context, and writes a structured proposal JSON to
+   `/tmp/ideation/proposal.json` covering: problem statement, proposed
+   solution, implementation sketch, acceptance criteria, effort estimate, and
+   open questions.
+3. **Challenger (Sonnet)** — reads the proposal and adversarially challenges
+   it across seven dimensions (value, feasibility, scope, risk, completeness,
+   alternatives, open questions). Outputs a critique JSON with per-dimension
+   severity ratings and suggested fixes.
+4. **Synthesizer (Opus)** — reads both JSONs, reconciles valid challenges into
+   a refined spec, and posts a structured comment on the issue. Also adds the
+   `feature-spec-ready` label when the spec is actionable.
+
+```
+feature-idea label added
+  └─ Proposer (Sonnet): expand idea → proposal.json
+       └─ Challenger (Sonnet): adversarial critique → challenges.json
+            └─ Synthesizer (Opus): reconcile → post refined spec to issue
+```
+
+**Idempotency** — each posted comment starts with:
+
+```
+<!-- feature-ideation-agent v1 issue=<num> cycle=<N> -->
+```
+
+Re-labeling the issue after editing it triggers a new cycle (N+1).
+
+### Triggering ideation
+
+```bash
+# Automatically: add the 'feature-idea' label to an issue on any repo
+gh issue edit <number> --repo owner/repo --add-label feature-idea
+
+# Manually (ad-hoc):
+gh workflow run feature-ideation.yml --repo don-petry/self \
+  -f issue_url=https://github.com/owner/repo/issues/42 \
+  -f dry_run=true
+```
+
+---
+
 ## Setup
 
 ### 1. Create a fine-grained PAT
@@ -77,7 +133,7 @@ Go to <https://github.com/settings/personal-access-tokens/new>. Settings:
   agent to act on).
 - **Repository permissions:**
   - Contents: **Read**
-  - Issues: **Read and write** (needed to create labels and add `needs-human-review`)
+  - Issues: **Read and write** (needed for PR review labels and feature ideation comments/labels)
   - Metadata: **Read** (auto)
   - Pull requests: **Read and write**
 - **Expiration:** as long as you're comfortable with. Set a calendar reminder
