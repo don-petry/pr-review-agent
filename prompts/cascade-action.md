@@ -9,7 +9,6 @@ read that verdict and post the review to GitHub.
 - `$PR_URL` — the PR to act on.
 - `$PR_HEAD_SHA` — the commit SHA that was reviewed.
 - `$DRY_RUN` — `true` or `false`.
-- `$AI_DELEGATION_ENABLED` — `true` or `false`. **Deprecated alias for `$AI_DELEGATION_ENABLED`.**
 - `$AI_DELEGATION_ENABLED` — `true` or `false`.
 - `$REVIEW_CYCLE` — integer.
 - `$MAX_REVIEW_CYCLES` — integer.
