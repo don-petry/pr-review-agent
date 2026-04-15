@@ -34,7 +34,7 @@ read that verdict and post the review to GitHub.
 
 **Risk:** <risk>
 **Reviewed commit:** `<SHA>`
-**Cascade:** triage → <$FINAL_TIER> (see `$ENGINE_LABEL` for models)
+**Cascade:** triage → `$FINAL_TIER` (see `$ENGINE_LABEL` for models)
 
 ### Summary
 <from the verdict's summary>
