@@ -143,5 +143,5 @@ Then act:
 
 After acting, print:
 ```json
-{"pr":"<url>","sha":"<sha>","risk":"<r>","decision":"<d>","mode":"<small|incremental>","delegated_to":"ai|human|none","posted":true|false}
+{"pr":"<url>","sha":"<sha>","risk":"<r>","decision":"<d>","mode":"<small|incremental|triage-approved>","delegated_to":"ai|human|none","posted":true|false}
 ```
