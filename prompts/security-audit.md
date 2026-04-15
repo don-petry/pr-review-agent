@@ -13,6 +13,7 @@ reviewer, called only for PRs with real concerns.
 - `$AI_DELEGATION_ENABLED` — `true` or `false`.
 - `$REVIEW_CYCLE` — integer.
 - `$MAX_REVIEW_CYCLES` — integer.
+- `$OUTPUT_FILE` — path to write the final audit verdict JSON.
 - `$TRIAGE_RESULT` — JSON from the triage tier.
 - `$DEEP_RESULT` — path to the deep review JSON file.
 - `$PRIOR_REVIEW_BODY` — prior review body if re-review.

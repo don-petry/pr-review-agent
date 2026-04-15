@@ -10,6 +10,7 @@ read that verdict and post the review to GitHub.
 - `$PR_HEAD_SHA` — the commit SHA that was reviewed.
 - `$DRY_RUN` — `true` or `false`.
 - `$AI_DELEGATION_ENABLED` — `true` or `false`.
+  - `$CLAUDE_ENABLED` — deprecated alias for `$AI_DELEGATION_ENABLED`.
 - `$REVIEW_CYCLE` — integer.
 - `$MAX_REVIEW_CYCLES` — integer.
 - `$FINAL_RESULT` — path to the JSON verdict from the resolving tier.

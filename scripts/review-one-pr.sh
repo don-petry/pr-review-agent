@@ -175,7 +175,7 @@ fi
 DEEP_ESCALATE=$(jq -r '.escalate_to_opus' "$OUTPUT_FILE")
 DEEP_DECISION=$(jq -r '.decision' "$OUTPUT_FILE")
 DEEP_RISK=$(jq -r '.risk' "$OUTPUT_FILE")
-echo "    [tier2] escalate_to_audit=$DEEP_ESCALATE decision=$DEEP_DECISION risk=$DEEP_RISK"
+echo "    [tier2] escalate_to_opus=$DEEP_ESCALATE decision=$DEEP_DECISION risk=$DEEP_RISK"
 
 # If deep review resolves without needing security audit → go straight to action
 if [ "$DEEP_ESCALATE" != "true" ]; then

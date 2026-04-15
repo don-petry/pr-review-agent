@@ -13,6 +13,7 @@ to approve or escalate further to the security auditor (Tier 3).
 - `$AI_DELEGATION_ENABLED` — `true` or `false`.
 - `$REVIEW_CYCLE` — integer.
 - `$MAX_REVIEW_CYCLES` — integer.
+- `$OUTPUT_FILE` — path where the JSON review result must be written.
 - `$TRIAGE_RESULT` — JSON output from the triage tier, including its
   `signals` array explaining why it escalated.
 - `$PRIOR_REVIEW_BODY` — prior review body if this is a re-review (empty if first).

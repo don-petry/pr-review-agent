@@ -126,7 +126,7 @@ and (if `$DRY_RUN` is `false`) post a PR review.
        (`gh api -X POST "repos/<owner>/<repo>/pulls/<num>/requested_reviewers" -f reviewers[]=don-petry`,
        swallowing errors).
        If `$AI_DELEGATION_ENABLED` is `true` but `$REVIEW_CYCLE` >= `$MAX_REVIEW_CYCLES`,
-       add a note in the escalation: "Claude delegation exhausted after
+       add a note in the escalation: "AI delegation exhausted after
        $REVIEW_CYCLE cycles — human review required."
 10. After all actions, print a single-line JSON status to stdout:
     `{"pr":"<url>","sha":"<sha>","risk":"<r>","decision":"<d>","delegated_to":"claude|human|none","posted":true|false}`
