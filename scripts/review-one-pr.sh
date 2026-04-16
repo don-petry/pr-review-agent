@@ -139,6 +139,19 @@ TRIAGE_RESULT=$(
   run_triage prompts/triage.md 2>"$TRIAGE_LOG"
 ) || true
 
+# Unset large pre-fetched env vars now that triage has consumed them.
+# PR_DIFF and PR_METADATA can be hundreds of KB; keeping them exported causes
+# E2BIG (Argument list too long) when later subprocesses (jq, claude) are forked.
+unset PR_DIFF PR_METADATA
+
+# Detect rate limit before JSON validation — exit 2 so the caller can fall back
+# to a different engine rather than burning through the remaining PR queue.
+if is_rate_limited "$TRIAGE_RESULT"; then
+  echo "    [tier1] rate limit detected — exiting with code 2 for engine fallback"
+  echo "    rate limit message: $TRIAGE_RESULT"
+  exit 2
+fi
+
 # Validate triage output is JSON
 if ! echo "$TRIAGE_RESULT" | jq empty 2>/dev/null; then
   echo "    [tier1] triage returned non-JSON, escalating by default"
@@ -185,10 +198,17 @@ wait $DEEP_PID || true
 # Validate primary deep review (required)
 OUTPUT_FILE="/tmp/cascade/deep.json"
 if [ ! -s "$OUTPUT_FILE" ] || ! jq empty "$OUTPUT_FILE" 2>/dev/null; then
-  echo "::warning::deep review did not produce valid JSON at $OUTPUT_FILE"
-  cat /tmp/cascade/deep.log || true
+  DEEP_LOG_CONTENT=$(cat /tmp/cascade/deep.log 2>/dev/null || true)
   kill $DUCK_PID 2>/dev/null || true
   wait $DUCK_PID 2>/dev/null || true
+  # Detect rate limit in the deep review output — exit 2 for engine fallback.
+  if is_rate_limited "$DEEP_LOG_CONTENT"; then
+    echo "    [tier2] rate limit detected — exiting with code 2 for engine fallback"
+    echo "$DEEP_LOG_CONTENT"
+    exit 2
+  fi
+  echo "::warning::deep review did not produce valid JSON at $OUTPUT_FILE"
+  echo "$DEEP_LOG_CONTENT"
   echo "::error::cascade failed at tier 2 for $PR_URL"
   exit 1
 fi
