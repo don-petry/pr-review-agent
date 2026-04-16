@@ -177,18 +177,22 @@ DUCK_OUTPUT="/tmp/cascade/rubber-duck.json"
 ) &
 DUCK_PID=$!
 
-# Wait for both to finish
+# Wait for deep review first — if it fails, kill the duck and exit early.
 wait $DEEP_PID || true
-wait $DUCK_PID || true
 
 # Validate primary deep review (required)
 OUTPUT_FILE="/tmp/cascade/deep.json"
 if [ ! -s "$OUTPUT_FILE" ] || ! jq empty "$OUTPUT_FILE" 2>/dev/null; then
   echo "::warning::deep review did not produce valid JSON at $OUTPUT_FILE"
   cat /tmp/cascade/deep.log || true
+  kill $DUCK_PID 2>/dev/null || true
+  wait $DUCK_PID 2>/dev/null || true
   echo "::error::cascade failed at tier 2 for $PR_URL"
   exit 1
 fi
+
+# Wait for duck to finish (deep succeeded)
+wait $DUCK_PID || true
 
 DEEP_DECISION=$(jq -r '.decision' "$OUTPUT_FILE")
 DEEP_RISK=$(jq -r '.risk' "$OUTPUT_FILE")
@@ -226,6 +230,7 @@ if [ "$DUCK_VALID" = "true" ]; then
     echo "    [tier2b] synthesis failed — falling back to deep review only"
     cat /tmp/cascade/synth.log 2>/dev/null || true
     OUTPUT_FILE="/tmp/cascade/deep.json"
+    DUCK_VALID=false
     COMBINED_ESCALATE=$(jq -r '.escalate_to_opus' "$OUTPUT_FILE")
   fi
 else
@@ -250,7 +255,11 @@ fi
 
 # --- Tier 3: Security audit ---
 echo "    [tier3] security audit ($ENGINE_AUDIT_MODEL)"
-DEEP_RESULT="$OUTPUT_FILE"
+# TIER2_RESULT may point to combined.json (deep+duck) or deep.json (duck failed).
+TIER2_RESULT="$OUTPUT_FILE"
+export TIER2_RESULT
+# Backward compat: security-audit.md reads $DEEP_RESULT
+DEEP_RESULT="$TIER2_RESULT"
 export DEEP_RESULT
 OUTPUT_FILE="/tmp/cascade/audit.json"
 export OUTPUT_FILE
