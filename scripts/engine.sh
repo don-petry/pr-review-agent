@@ -21,13 +21,13 @@ case "$REVIEW_ENGINE" in
     ENGINE_SINGLE_LABEL="single-reviewer mode: opus 4.6"
     ;;
   copilot)
-    ENGINE_TRIAGE_MODEL="gpt-4o-mini"
-    ENGINE_DEEP_MODEL="o1"
-    ENGINE_AUDIT_MODEL="o1-pro"
-    ENGINE_ACTION_MODEL="o1"
-    ENGINE_SINGLE_MODEL="o1-pro"
-    ENGINE_LABEL="triage: gpt-4o-mini → deep: o1 → audit: o1-pro"
-    ENGINE_SINGLE_LABEL="single-reviewer mode: o1-pro"
+    ENGINE_TRIAGE_MODEL="gpt-5-mini"
+    ENGINE_DEEP_MODEL="gpt-5.2"
+    ENGINE_AUDIT_MODEL="gpt-5.4"
+    ENGINE_ACTION_MODEL="gpt-5.2"
+    ENGINE_SINGLE_MODEL="gpt-5.4"
+    ENGINE_LABEL="triage: gpt-5-mini → deep: gpt-5.2 → audit: gpt-5.4"
+    ENGINE_SINGLE_LABEL="single-reviewer mode: gpt-5.4"
     ;;
   *)
     echo "::error::Unknown REVIEW_ENGINE='$REVIEW_ENGINE' (expected: claude or copilot)"
