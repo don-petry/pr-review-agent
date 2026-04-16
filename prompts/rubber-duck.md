@@ -19,6 +19,7 @@ otherwise. Prioritize concrete findings over vague concerns.
   `signals` array explaining why it escalated.
 - `$PRIOR_REVIEW_BODY` — prior review body if this is a re-review (empty if first).
 - `$PRIOR_REVIEW_SHA` — prior SHA if re-review.
+- `$OUTPUT_FILE` — absolute path where you MUST write your JSON verdict.
 
 ## Scope
 

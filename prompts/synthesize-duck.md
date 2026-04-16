@@ -33,7 +33,7 @@ a single combined verdict.
 ## Synthesis rules
 
 ### Risk
-- `final_risk` = the **higher** of the two. If either says HIGH, the combined
+- `risk` = the **higher** of the two. If either says HIGH, the combined
   risk is HIGH. HIGH > MEDIUM > LOW.
 
 ### Decision
@@ -48,11 +48,12 @@ a single combined verdict.
 - **Union** all findings from both reviewers.
 - **Deduplicate**: if both flagged the same file+line+category, keep one entry
   and add a `"sources": ["deep", "rubber-duck"]` field noting both agreed.
-  Cross-engine agreement on a finding is a strong signal — bump its severity
-  up one level if it was `info` or `minor`.
+  Cross-engine agreement on a finding is a strong signal — apply this exact
+  severity mapping to the deduplicated finding: `info` → `minor`, `minor` →
+  `major`, and leave `major` / `critical` unchanged.
 - For findings from only one reviewer, add `"sources": ["deep"]` or
   `"sources": ["rubber-duck"]`.
-- Preserve the original severity unless cross-engine agreement triggers a bump.
+- Otherwise preserve the original severity.
 
 ### Summary
 Write a 2-4 sentence combined summary that:

@@ -58,10 +58,21 @@ jobs:
 
       - name: Install review engine CLIs
         run: |
-          # Install both engines — the primary runs the cascade, the opposite
-          # engine runs the adversarial "rubber duck" review in parallel.
-          npm install -g @anthropic-ai/claude-code || true
-          gh extension install github/gh-copilot || true
+          # Primary engine must install successfully; duck engine is best-effort.
+          case "$REVIEW_ENGINE" in
+            claude)
+              npm install -g @anthropic-ai/claude-code
+              gh extension install github/gh-copilot || true
+              ;;
+            copilot)
+              gh extension install github/gh-copilot
+              npm install -g @anthropic-ai/claude-code || true
+              ;;
+            *)
+              echo "::error::Unknown REVIEW_ENGINE=$REVIEW_ENGINE"
+              exit 1
+              ;;
+          esac
 
       - name: Verify auth
         run: |
