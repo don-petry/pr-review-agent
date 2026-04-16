@@ -178,10 +178,13 @@ fi
 echo "    [tier2] deep review ($ENGINE_DEEP_MODEL) + rubber duck ($DUCK_MODEL via $DUCK_ENGINE)"
 
 # Launch both reviewers in parallel — different model families for diversity.
+# Stdout (model text output) and stderr (process errors) are kept separate so
+# the rate-limit check below inspects only the model's own words, not PR content
+# or tool-execution noise that could cause false positives.
 OUTPUT_FILE="/tmp/cascade/deep.json"
 export OUTPUT_FILE
 run_agentic prompts/deep-review.md "$ENGINE_DEEP_MODEL" \
-  > /tmp/cascade/deep.log 2>&1 &
+  > /tmp/cascade/deep-stdout.txt 2>/tmp/cascade/deep.log &
 DEEP_PID=$!
 
 DUCK_OUTPUT="/tmp/cascade/rubber-duck.json"
@@ -198,17 +201,20 @@ wait $DEEP_PID || true
 # Validate primary deep review (required)
 OUTPUT_FILE="/tmp/cascade/deep.json"
 if [ ! -s "$OUTPUT_FILE" ] || ! jq empty "$OUTPUT_FILE" 2>/dev/null; then
-  DEEP_LOG_CONTENT=$(cat /tmp/cascade/deep.log 2>/dev/null || true)
+  # Check the model's stdout for a rate-limit message.  We intentionally do NOT
+  # check deep.log (stderr/process noise) to avoid false positives from PR diff
+  # content that happens to mention rate-limiting in code or comments.
+  DEEP_STDOUT_CONTENT=$(cat /tmp/cascade/deep-stdout.txt 2>/dev/null || true)
   kill $DUCK_PID 2>/dev/null || true
   wait $DUCK_PID 2>/dev/null || true
-  # Detect rate limit in the deep review output — exit 2 for engine fallback.
-  if is_rate_limited "$DEEP_LOG_CONTENT"; then
+  if is_rate_limited "$DEEP_STDOUT_CONTENT"; then
     echo "    [tier2] rate limit detected — exiting with code 2 for engine fallback"
-    echo "$DEEP_LOG_CONTENT"
+    echo "$DEEP_STDOUT_CONTENT"
     exit 2
   fi
   echo "::warning::deep review did not produce valid JSON at $OUTPUT_FILE"
-  echo "$DEEP_LOG_CONTENT"
+  cat /tmp/cascade/deep-stdout.txt 2>/dev/null || true
+  cat /tmp/cascade/deep.log 2>/dev/null || true
   echo "::error::cascade failed at tier 2 for $PR_URL"
   exit 1
 fi
