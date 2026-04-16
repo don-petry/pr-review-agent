@@ -159,12 +159,30 @@ if [ "$TRIAGE_ESCALATE" = "false" ]; then
   exit 0
 fi
 
-# --- Tier 2: Deep review ---
-echo "    [tier2] deep review ($ENGINE_DEEP_MODEL)"
+# --- Tier 2: Deep review + Rubber duck (parallel, cross-engine) ---
+echo "    [tier2] deep review ($ENGINE_DEEP_MODEL) + rubber duck ($DUCK_MODEL via $DUCK_ENGINE)"
+
+# Launch both reviewers in parallel — different model families for diversity.
 OUTPUT_FILE="/tmp/cascade/deep.json"
 export OUTPUT_FILE
 run_agentic prompts/deep-review.md "$ENGINE_DEEP_MODEL" \
-  > /tmp/cascade/deep.log 2>&1 || true
+  > /tmp/cascade/deep.log 2>&1 &
+DEEP_PID=$!
+
+DUCK_OUTPUT="/tmp/cascade/rubber-duck.json"
+(
+  export OUTPUT_FILE="$DUCK_OUTPUT"
+  run_duck prompts/rubber-duck.md "$DUCK_MODEL" \
+    > /tmp/cascade/duck.log 2>&1
+) &
+DUCK_PID=$!
+
+# Wait for both to finish
+wait $DEEP_PID || true
+wait $DUCK_PID || true
+
+# Validate primary deep review (required)
+OUTPUT_FILE="/tmp/cascade/deep.json"
 if [ ! -s "$OUTPUT_FILE" ] || ! jq empty "$OUTPUT_FILE" 2>/dev/null; then
   echo "::warning::deep review did not produce valid JSON at $OUTPUT_FILE"
   cat /tmp/cascade/deep.log || true
@@ -172,17 +190,59 @@ if [ ! -s "$OUTPUT_FILE" ] || ! jq empty "$OUTPUT_FILE" 2>/dev/null; then
   exit 1
 fi
 
-DEEP_ESCALATE=$(jq -r '.escalate_to_opus' "$OUTPUT_FILE")
 DEEP_DECISION=$(jq -r '.decision' "$OUTPUT_FILE")
 DEEP_RISK=$(jq -r '.risk' "$OUTPUT_FILE")
-echo "    [tier2] escalate_to_opus=$DEEP_ESCALATE decision=$DEEP_DECISION risk=$DEEP_RISK"
+echo "    [tier2] deep: decision=$DEEP_DECISION risk=$DEEP_RISK"
 
-# If deep review resolves without needing security audit → go straight to action
-if [ "$DEEP_ESCALATE" != "true" ]; then
-  echo "    [action] deep review resolved — posting review"
+# Validate rubber duck (optional — graceful degradation if it fails)
+DUCK_VALID=false
+if [ -s "$DUCK_OUTPUT" ] && jq empty "$DUCK_OUTPUT" 2>/dev/null; then
+  DUCK_DECISION=$(jq -r '.decision' "$DUCK_OUTPUT")
+  DUCK_RISK=$(jq -r '.risk' "$DUCK_OUTPUT")
+  DUCK_VALID=true
+  echo "    [tier2] duck: decision=$DUCK_DECISION risk=$DUCK_RISK"
+else
+  echo "    [tier2] rubber duck did not produce valid JSON — continuing with deep review only"
+  cat /tmp/cascade/duck.log 2>/dev/null || true
+fi
+
+# --- Tier 2b: Synthesize deep + duck verdicts ---
+if [ "$DUCK_VALID" = "true" ]; then
+  echo "    [tier2b] synthesizing deep + duck verdicts ($ENGINE_ACTION_MODEL)"
+  DEEP_RESULT="/tmp/cascade/deep.json"
+  DUCK_RESULT="$DUCK_OUTPUT"
+  OUTPUT_FILE="/tmp/cascade/combined.json"
+  export DEEP_RESULT DUCK_RESULT OUTPUT_FILE
+  run_agentic prompts/synthesize-duck.md "$ENGINE_ACTION_MODEL" \
+    > /tmp/cascade/synth.log 2>&1 || true
+
+  if [ -s "$OUTPUT_FILE" ] && jq empty "$OUTPUT_FILE" 2>/dev/null; then
+    COMBINED_DECISION=$(jq -r '.decision' "$OUTPUT_FILE")
+    COMBINED_RISK=$(jq -r '.risk' "$OUTPUT_FILE")
+    COMBINED_AGREEMENT=$(jq -r '.agreement' "$OUTPUT_FILE")
+    COMBINED_ESCALATE=$(jq -r '.escalate_to_opus' "$OUTPUT_FILE")
+    echo "    [tier2b] combined: decision=$COMBINED_DECISION risk=$COMBINED_RISK agreement=$COMBINED_AGREEMENT escalate_to_opus=$COMBINED_ESCALATE"
+  else
+    echo "    [tier2b] synthesis failed — falling back to deep review only"
+    cat /tmp/cascade/synth.log 2>/dev/null || true
+    OUTPUT_FILE="/tmp/cascade/deep.json"
+    COMBINED_ESCALATE=$(jq -r '.escalate_to_opus' "$OUTPUT_FILE")
+  fi
+else
+  OUTPUT_FILE="/tmp/cascade/deep.json"
+  COMBINED_ESCALATE=$(jq -r '.escalate_to_opus' "$OUTPUT_FILE")
+fi
+
+# If tier 2 resolves without needing security audit → go straight to action
+if [ "$COMBINED_ESCALATE" != "true" ]; then
+  echo "    [action] tier 2 resolved — posting review"
   FINAL_RESULT="$OUTPUT_FILE"
   export FINAL_RESULT
-  export FINAL_TIER="deep"
+  if [ "$DUCK_VALID" = "true" ]; then
+    export FINAL_TIER="deep+duck"
+  else
+    export FINAL_TIER="deep"
+  fi
   run_agentic prompts/cascade-action.md "$ENGINE_ACTION_MODEL"
   echo "    [done]  $PR_URL"
   exit 0
