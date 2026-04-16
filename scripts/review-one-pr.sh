@@ -139,6 +139,19 @@ TRIAGE_RESULT=$(
   run_triage prompts/triage.md 2>"$TRIAGE_LOG"
 ) || true
 
+# Unset large pre-fetched env vars now that triage has consumed them.
+# PR_DIFF and PR_METADATA can be hundreds of KB; keeping them exported causes
+# E2BIG (Argument list too long) when later subprocesses (jq, claude) are forked.
+unset PR_DIFF PR_METADATA
+
+# Detect rate limit before JSON validation — exit 2 so the caller can fall back
+# to a different engine rather than burning through the remaining PR queue.
+if is_rate_limited "$TRIAGE_RESULT"; then
+  echo "    [tier1] rate limit detected — exiting with code 2 for engine fallback"
+  echo "    rate limit message: $TRIAGE_RESULT"
+  exit 2
+fi
+
 # Validate triage output is JSON
 if ! echo "$TRIAGE_RESULT" | jq empty 2>/dev/null; then
   echo "    [tier1] triage returned non-JSON, escalating by default"
@@ -165,10 +178,13 @@ fi
 echo "    [tier2] deep review ($ENGINE_DEEP_MODEL) + rubber duck ($DUCK_MODEL via $DUCK_ENGINE)"
 
 # Launch both reviewers in parallel — different model families for diversity.
+# Stdout (model text output) and stderr (process errors) are kept separate so
+# the rate-limit check below inspects only the model's own words, not PR content
+# or tool-execution noise that could cause false positives.
 OUTPUT_FILE="/tmp/cascade/deep.json"
 export OUTPUT_FILE
 run_agentic prompts/deep-review.md "$ENGINE_DEEP_MODEL" \
-  > /tmp/cascade/deep.log 2>&1 &
+  > /tmp/cascade/deep-stdout.txt 2>/tmp/cascade/deep.log &
 DEEP_PID=$!
 
 DUCK_OUTPUT="/tmp/cascade/rubber-duck.json"
@@ -185,10 +201,20 @@ wait $DEEP_PID || true
 # Validate primary deep review (required)
 OUTPUT_FILE="/tmp/cascade/deep.json"
 if [ ! -s "$OUTPUT_FILE" ] || ! jq empty "$OUTPUT_FILE" 2>/dev/null; then
-  echo "::warning::deep review did not produce valid JSON at $OUTPUT_FILE"
-  cat /tmp/cascade/deep.log || true
+  # Check the model's stdout for a rate-limit message.  We intentionally do NOT
+  # check deep.log (stderr/process noise) to avoid false positives from PR diff
+  # content that happens to mention rate-limiting in code or comments.
+  DEEP_STDOUT_CONTENT=$(cat /tmp/cascade/deep-stdout.txt 2>/dev/null || true)
   kill $DUCK_PID 2>/dev/null || true
   wait $DUCK_PID 2>/dev/null || true
+  if is_rate_limited "$DEEP_STDOUT_CONTENT"; then
+    echo "    [tier2] rate limit detected — exiting with code 2 for engine fallback"
+    echo "$DEEP_STDOUT_CONTENT"
+    exit 2
+  fi
+  echo "::warning::deep review did not produce valid JSON at $OUTPUT_FILE"
+  cat /tmp/cascade/deep-stdout.txt 2>/dev/null || true
+  cat /tmp/cascade/deep.log 2>/dev/null || true
   echo "::error::cascade failed at tier 2 for $PR_URL"
   exit 1
 fi

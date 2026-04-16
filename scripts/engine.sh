@@ -50,6 +50,14 @@ export DUCK_ENGINE DUCK_MODEL
 
 echo "    engine: $REVIEW_ENGINE ($ENGINE_LABEL)"
 
+# is_rate_limited <text>
+# Returns 0 (true) if the text looks like a Claude or Copilot rate-limit message.
+# review-one-pr.sh exits with code 2 when this fires so the caller can switch engines.
+is_rate_limited() {
+  local text="$1"
+  echo "$text" | grep -qiE "(hit your limit|rate[ -]?limit|resets [0-9]+(am|pm)|usage limit|quota exceeded|too many requests|exceeded.*quota)"
+}
+
 # run_triage <prompt_file>
 # No-tool mode: reads pre-fetched context from env vars only.
 # Captures stdout (the model's JSON response).
