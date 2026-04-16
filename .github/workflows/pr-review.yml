@@ -56,20 +56,12 @@ jobs:
       - name: Checkout agent repo
         uses: actions/checkout@v5
 
-      - name: Install review engine CLI
+      - name: Install review engine CLIs
         run: |
-          case "$REVIEW_ENGINE" in
-            claude)
-              npm install -g @anthropic-ai/claude-code
-              ;;
-            copilot)
-              gh extension install github/gh-copilot
-              ;;
-            *)
-              echo "::error::Unknown REVIEW_ENGINE=$REVIEW_ENGINE"
-              exit 1
-              ;;
-          esac
+          # Install both engines — the primary runs the cascade, the opposite
+          # engine runs the adversarial "rubber duck" review in parallel.
+          npm install -g @anthropic-ai/claude-code || true
+          gh extension install github/gh-copilot || true
 
       - name: Verify auth
         run: |
