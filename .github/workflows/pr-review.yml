@@ -151,11 +151,10 @@ jobs:
           if [ -n "${PR_URL_OVERRIDE}" ]; then
             printf '%s\n' "${PR_URL_OVERRIDE}" > prs.txt
           else
-            bash scripts/list-prs.sh > prs_all.txt
-            TOTAL=$(wc -l < prs_all.txt | tr -d ' ')
-            head -n "$MAX_PRS" prs_all.txt > prs.txt
-            if [ "$TOTAL" -gt "$MAX_PRS" ]; then
-              echo "::notice::Backlog has $TOTAL PRs but MAX_PRS=$MAX_PRS — reviewing first $MAX_PRS only. Remaining will be picked up in subsequent runs."
+            bash scripts/list-prs.sh > prs.txt
+            TOTAL=$(wc -l < prs.txt | tr -d ' ')
+            if [ "$TOTAL" -gt 0 ]; then
+              echo "::notice::Candidate pool has $TOTAL PRs. Review loop will process until MAX_PRS actual reviews are completed (no-ops are skipped)."
             fi
           fi
           count=$(grep -c . prs.txt || true)
