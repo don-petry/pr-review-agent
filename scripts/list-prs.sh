@@ -5,10 +5,14 @@
 #   1. PRs authored by @me across all repos (self-review).
 #   2. PRs where @me is a requested reviewer across all repos.
 #
-# Filters out PRs that have already been reviewed (marked with
-# <!-- pr-review-agent v1 sha=... --> in comments).
+# Filters:
+#   --draft=false       — skip work-in-progress PRs
+#   --checks passing    — only include PRs where all CI checks are green;
+#                         failing or pending CI PRs are excluded here so they
+#                         never consume a review slot. review-one-pr.sh also
+#                         enforces this per-PR as a second layer of defence.
 #
-# Output: one PR URL per line on stdout. Drafts and already-reviewed PRs are excluded.
+# Output: one PR URL per line on stdout.
 
 set -euo pipefail
 
@@ -16,6 +20,7 @@ authored=$(gh search prs \
   --state open \
   --author "@me" \
   --draft=false \
+  --checks passing \
   --limit 100 \
   --json url \
   --jq '.[].url')
@@ -24,6 +29,7 @@ review_requested=$(gh search prs \
   --state open \
   --review-requested "@me" \
   --draft=false \
+  --checks passing \
   --limit 100 \
   --json url \
   --jq '.[].url')
