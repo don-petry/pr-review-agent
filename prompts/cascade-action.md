@@ -58,14 +58,21 @@ array, note which engine(s) flagged each finding.>
 _Reviewed by the don-petry PR-review cascade ($ENGINE_LABEL). Reply with `@don-petry` if you need a human._
 ```
 
-5. **Act** (same logic as synthesize.md):
+5. **Act**:
    - If `$DRY_RUN` is `true`: print `--- WOULD POST ---`, the body, and
      planned actions. Exit.
    - If `decision` is `approve`:
      1. `gh pr review "$PR_URL" --approve --body "$BODY"`
      2. Rebase if `mergeStateStatus` is `BEHIND`:
         `gh api -X PUT "repos/<owner>/<repo>/pulls/<num>/update-branch" -f expected_head_sha="$PR_HEAD_SHA"` (swallow errors)
-        Then sleep 5 seconds to allow GitHub to process the branch update before merging.
+        Then poll until the branch is no longer `BEHIND` (up to 30 s, 5 s interval):
+        ```
+        for i in 1 2 3 4 5 6; do
+          STATUS=$(gh pr view "$PR_URL" --json mergeStateStatus --jq '.mergeStateStatus')
+          [ "$STATUS" != "BEHIND" ] && break
+          sleep 5
+        done
+        ```
      3. Bypass merge: `gh pr merge "$PR_URL" --squash --admin` (swallow errors)
         Use `--admin` to bypass branch protection rules (don-petry has bypass permissions).
         Do NOT use `--auto` — bypass merge is immediate, not gated on further approvals.
