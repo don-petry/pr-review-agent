@@ -66,9 +66,18 @@ and (if `$DRY_RUN` is `false`) post a PR review.
       is `BEHIND` (base branch has advanced), update the PR branch:
       `gh api -X PUT "repos/<owner>/<repo>/pulls/<num>/update-branch" -f expected_head_sha="$PR_HEAD_SHA"`
       Swallow errors (conflicts will be caught on next cycle).
-   2. **Enable auto-merge**: `gh pr merge "$PR_URL" --auto --squash`
-      This tells GitHub to merge the PR once all required checks pass.
-      Swallow errors if auto-merge is already enabled or not allowed.
+      Then poll until the branch is no longer `BEHIND` (up to 30 s, 5 s interval):
+      ```
+      for i in 1 2 3 4 5 6; do
+        STATUS=$(gh pr view "$PR_URL" --json mergeStateStatus --jq '.mergeStateStatus')
+        [ "$STATUS" != "BEHIND" ] && break
+        sleep 5
+      done
+      ```
+   2. **Bypass merge**: `gh pr merge "$PR_URL" --squash --admin`
+      Use `--admin` to bypass branch protection rules (don-petry has bypass permissions).
+      Do NOT use `--auto` — bypass merge is immediate, not gated on further approvals.
+      Swallow errors.
    3. Remove the `needs-human-review` label if present:
       `gh pr edit "$PR_URL" --remove-label needs-human-review` (swallow errors).
 9. **Delegation** (only when escalating, `$DRY_RUN` is `false`):
