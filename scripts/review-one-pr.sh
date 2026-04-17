@@ -30,32 +30,36 @@ export PR_URL
 
 echo "==> $PR_URL"
 
-# 1. Current head SHA
-PR_HEAD_SHA=$(gh pr view "$PR_URL" --json headRefOid --jq '.headRefOid')
+# 1. Current head SHA + CI gate — single API call for both fields.
+#    Strict CI classification:
+#      pending — any item still running (IN_PROGRESS/QUEUED/WAITING/PENDING/EXPECTED
+#                or COMPLETED with null/empty conclusion)
+#      passing — all items completed AND every conclusion is SUCCESS (or rollup empty)
+#      failing — anything else (FAILURE, ACTION_REQUIRED, TIMED_OUT, CANCELLED,
+#                NEUTRAL, SKIPPED, STALE, STARTUP_FAILURE, or unknown conclusions)
+PR_SNAPSHOT=$(gh pr view "$PR_URL" --json headRefOid,statusCheckRollup)
+PR_HEAD_SHA=$(echo "$PR_SNAPSHOT" | jq -r '.headRefOid')
 export PR_HEAD_SHA
 echo "    head SHA: $PR_HEAD_SHA"
 
-# 1b. CI gate: skip PRs with failing or still-running checks.
-#     We only spend review tokens on PRs where all checks are conclusive and green.
-#     No checks at all (empty statusCheckRollup) is treated as passing.
-CI_STATUS=$(gh pr view "$PR_URL" --json statusCheckRollup --jq '
+CI_STATUS=$(echo "$PR_SNAPSHOT" | jq -r '
+  def is_pending:
+    .status == "IN_PROGRESS" or .status == "QUEUED" or .status == "WAITING" or
+    .state  == "PENDING"     or .state  == "EXPECTED" or
+    (.status == "COMPLETED" and (.conclusion == null or .conclusion == ""));
+  def is_success:
+    .conclusion == "SUCCESS" or .state == "SUCCESS";
   if (.statusCheckRollup | length) == 0 then "passing"
-  elif ([.statusCheckRollup[] | select(
-         .conclusion == "FAILURE" or
-         .conclusion == "ACTION_REQUIRED" or
-         .conclusion == "TIMED_OUT" or
-         .conclusion == "CANCELLED"
-       )] | length) > 0 then "failing"
-  elif ([.statusCheckRollup[] | select(
-         .status == "IN_PROGRESS" or
-         .status == "QUEUED" or
-         .status == "WAITING" or
-         (.status == "COMPLETED" and (.conclusion == null or .conclusion == ""))
-       )] | length) > 0 then "pending"
-  else "passing"
+  elif ([.statusCheckRollup[] | select(is_pending)] | length) > 0 then "pending"
+  elif ([.statusCheckRollup[] | select(is_success)] | length) == (.statusCheckRollup | length) then "passing"
+  else "failing"
   end
 ')
 echo "    CI status: $CI_STATUS"
+
+# Exit code 100 is the skip sentinel: the caller treats any 100 exit as a
+# no-op and does not count it against the MAX_PRS review budget.
+# Reasons that produce a skip: already-reviewed-at-head, ci-failing, ci-pending.
 if [ "$CI_STATUS" = "failing" ]; then
   echo "    skip: CI checks are failing — will re-evaluate after fixes are pushed"
   echo "{\"pr\":\"$PR_URL\",\"sha\":\"$PR_HEAD_SHA\",\"decision\":\"skip\",\"reason\":\"ci-failing\"}"
