@@ -35,6 +35,38 @@ PR_HEAD_SHA=$(gh pr view "$PR_URL" --json headRefOid --jq '.headRefOid')
 export PR_HEAD_SHA
 echo "    head SHA: $PR_HEAD_SHA"
 
+# 1b. CI gate: skip PRs with failing or still-running checks.
+#     We only spend review tokens on PRs where all checks are conclusive and green.
+#     No checks at all (empty statusCheckRollup) is treated as passing.
+CI_STATUS=$(gh pr view "$PR_URL" --json statusCheckRollup --jq '
+  if (.statusCheckRollup | length) == 0 then "passing"
+  elif ([.statusCheckRollup[] | select(
+         .conclusion == "FAILURE" or
+         .conclusion == "ACTION_REQUIRED" or
+         .conclusion == "TIMED_OUT" or
+         .conclusion == "CANCELLED"
+       )] | length) > 0 then "failing"
+  elif ([.statusCheckRollup[] | select(
+         .status == "IN_PROGRESS" or
+         .status == "QUEUED" or
+         .status == "WAITING" or
+         (.status == "COMPLETED" and (.conclusion == null or .conclusion == ""))
+       )] | length) > 0 then "pending"
+  else "passing"
+  end
+')
+echo "    CI status: $CI_STATUS"
+if [ "$CI_STATUS" = "failing" ]; then
+  echo "    skip: CI checks are failing — will re-evaluate after fixes are pushed"
+  echo "{\"pr\":\"$PR_URL\",\"sha\":\"$PR_HEAD_SHA\",\"decision\":\"skip\",\"reason\":\"ci-failing\"}"
+  exit 100
+fi
+if [ "$CI_STATUS" = "pending" ]; then
+  echo "    skip: CI checks still in progress — will re-evaluate when checks complete"
+  echo "{\"pr\":\"$PR_URL\",\"sha\":\"$PR_HEAD_SHA\",\"decision\":\"skip\",\"reason\":\"ci-pending\"}"
+  exit 100
+fi
+
 # 2. Idempotency: look for our marker at this SHA in existing reviews+comments
 # Extract the most recent SHA from our review marker in existing PR comments/reviews.
 # Uses (array + array) to concatenate safely when either is empty, then iterates
