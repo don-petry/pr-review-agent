@@ -133,7 +133,10 @@ Then act:
   1. `gh pr review "$PR_URL" --approve --body "$BODY"`
   2. Rebase if `mergeStateStatus` is `BEHIND`:
      `gh api -X PUT "repos/<owner>/<repo>/pulls/<num>/update-branch" -f expected_head_sha="$PR_HEAD_SHA"` (swallow errors)
-  3. Enable auto-merge: `gh pr merge "$PR_URL" --auto --squash` (swallow errors)
+     Then sleep 5 seconds to allow GitHub to process the branch update before merging.
+  3. Bypass merge: `gh pr merge "$PR_URL" --squash --admin` (swallow errors)
+     Use `--admin` to bypass branch protection rules (don-petry has bypass permissions).
+     Do NOT use `--auto` — bypass merge is immediate, not gated on further approvals.
   4. Remove `needs-human-review` label if present (swallow errors)
 - If escalating:
   - If `$AI_DELEGATION_ENABLED` is `true` AND `$REVIEW_CYCLE` < `$MAX_REVIEW_CYCLES`
