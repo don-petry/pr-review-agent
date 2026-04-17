@@ -66,6 +66,14 @@ and (if `$DRY_RUN` is `false`) post a PR review.
       is `BEHIND` (base branch has advanced), update the PR branch:
       `gh api -X PUT "repos/<owner>/<repo>/pulls/<num>/update-branch" -f expected_head_sha="$PR_HEAD_SHA"`
       Swallow errors (conflicts will be caught on next cycle).
+      Then poll until the branch is no longer `BEHIND` (up to 30 s, 5 s interval):
+      ```
+      for i in 1 2 3 4 5 6; do
+        STATUS=$(gh pr view "$PR_URL" --json mergeStateStatus --jq '.mergeStateStatus')
+        [ "$STATUS" != "BEHIND" ] && break
+        sleep 5
+      done
+      ```
    2. **Enable auto-merge**: `gh pr merge "$PR_URL" --auto --squash`
       This tells GitHub to merge the PR once all required checks pass.
       Swallow errors if auto-merge is already enabled or not allowed.

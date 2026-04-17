@@ -133,6 +133,14 @@ Then act:
   1. `gh pr review "$PR_URL" --approve --body "$BODY"`
   2. Rebase if `mergeStateStatus` is `BEHIND`:
      `gh api -X PUT "repos/<owner>/<repo>/pulls/<num>/update-branch" -f expected_head_sha="$PR_HEAD_SHA"` (swallow errors)
+     Then poll until the branch is no longer `BEHIND` (up to 30 s, 5 s interval):
+     ```
+     for i in 1 2 3 4 5 6; do
+       STATUS=$(gh pr view "$PR_URL" --json mergeStateStatus --jq '.mergeStateStatus')
+       [ "$STATUS" != "BEHIND" ] && break
+       sleep 5
+     done
+     ```
   3. Enable auto-merge: `gh pr merge "$PR_URL" --auto --squash` (swallow errors)
   4. Remove `needs-human-review` label if present (swallow errors)
 - If escalating:
