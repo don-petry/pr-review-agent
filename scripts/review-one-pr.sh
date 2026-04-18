@@ -30,10 +30,49 @@ export PR_URL
 
 echo "==> $PR_URL"
 
-# 1. Current head SHA
-PR_HEAD_SHA=$(gh pr view "$PR_URL" --json headRefOid --jq '.headRefOid')
+# 1. Current head SHA + CI gate — single API call for both fields.
+#    Strict CI classification:
+#      pending — any item still running (IN_PROGRESS/QUEUED/WAITING/PENDING/EXPECTED
+#                or COMPLETED with null/empty conclusion)
+#      passing — all items completed AND every conclusion is SUCCESS, SKIPPED, or
+#                NEUTRAL (or rollup empty). SKIPPED covers path-filtered checks;
+#                NEUTRAL covers informational checks that don't gate merging.
+#      failing — anything else (FAILURE, ACTION_REQUIRED, TIMED_OUT, CANCELLED,
+#                STALE, STARTUP_FAILURE, or unknown conclusions)
+PR_SNAPSHOT=$(gh pr view "$PR_URL" --json headRefOid,statusCheckRollup)
+PR_HEAD_SHA=$(echo "$PR_SNAPSHOT" | jq -r '.headRefOid')
 export PR_HEAD_SHA
 echo "    head SHA: $PR_HEAD_SHA"
+
+CI_STATUS=$(echo "$PR_SNAPSHOT" | jq -r '
+  def is_pending:
+    .status == "IN_PROGRESS" or .status == "QUEUED" or .status == "WAITING" or
+    .state  == "PENDING"     or .state  == "EXPECTED" or
+    (.status == "COMPLETED" and (.conclusion == null or .conclusion == ""));
+  def is_success:
+    .conclusion == "SUCCESS" or .conclusion == "SKIPPED" or .conclusion == "NEUTRAL" or
+    .state == "SUCCESS";
+  if (.statusCheckRollup | length) == 0 then "passing"
+  elif ([.statusCheckRollup[] | select(is_pending)] | length) > 0 then "pending"
+  elif ([.statusCheckRollup[] | select(is_success)] | length) == (.statusCheckRollup | length) then "passing"
+  else "failing"
+  end
+')
+echo "    CI status: $CI_STATUS"
+
+# Exit code 100 is the skip sentinel: the caller treats any 100 exit as a
+# no-op and does not count it against the MAX_PRS review budget.
+# Reasons that produce a skip: already-reviewed-at-head, ci-failing, ci-pending.
+if [ "$CI_STATUS" = "failing" ]; then
+  echo "    skip: CI checks are failing — will re-evaluate after fixes are pushed"
+  echo "{\"pr\":\"$PR_URL\",\"sha\":\"$PR_HEAD_SHA\",\"decision\":\"skip\",\"reason\":\"ci-failing\"}"
+  exit 100
+fi
+if [ "$CI_STATUS" = "pending" ]; then
+  echo "    skip: CI checks still in progress — will re-evaluate when checks complete"
+  echo "{\"pr\":\"$PR_URL\",\"sha\":\"$PR_HEAD_SHA\",\"decision\":\"skip\",\"reason\":\"ci-pending\"}"
+  exit 100
+fi
 
 # 2. Idempotency: look for our marker at this SHA in existing reviews+comments
 # Extract the most recent SHA from our review marker in existing PR comments/reviews.
