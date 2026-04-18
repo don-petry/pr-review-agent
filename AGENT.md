@@ -130,7 +130,7 @@ rulesets bypass that org-admin approval requires.
 3. Settings:
    - **Note:** `pr-review-agent`
    - **Expiration:** 1 year (set a calendar reminder to rotate)
-   - **Scopes:** ✅ `repo` ✅ `admin:org`
+   - **Scopes:** ✅ `repo`
 4. Generate and copy the token immediately.
 5. Sign back in as `don-petry` and store the token:
 
