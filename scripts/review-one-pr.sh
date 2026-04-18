@@ -34,9 +34,11 @@ echo "==> $PR_URL"
 #    Strict CI classification:
 #      pending — any item still running (IN_PROGRESS/QUEUED/WAITING/PENDING/EXPECTED
 #                or COMPLETED with null/empty conclusion)
-#      passing — all items completed AND every conclusion is SUCCESS (or rollup empty)
+#      passing — all items completed AND every conclusion is SUCCESS, SKIPPED, or
+#                NEUTRAL (or rollup empty). SKIPPED covers path-filtered checks;
+#                NEUTRAL covers informational checks that don't gate merging.
 #      failing — anything else (FAILURE, ACTION_REQUIRED, TIMED_OUT, CANCELLED,
-#                NEUTRAL, SKIPPED, STALE, STARTUP_FAILURE, or unknown conclusions)
+#                STALE, STARTUP_FAILURE, or unknown conclusions)
 PR_SNAPSHOT=$(gh pr view "$PR_URL" --json headRefOid,statusCheckRollup)
 PR_HEAD_SHA=$(echo "$PR_SNAPSHOT" | jq -r '.headRefOid')
 export PR_HEAD_SHA
@@ -48,7 +50,8 @@ CI_STATUS=$(echo "$PR_SNAPSHOT" | jq -r '
     .state  == "PENDING"     or .state  == "EXPECTED" or
     (.status == "COMPLETED" and (.conclusion == null or .conclusion == ""));
   def is_success:
-    .conclusion == "SUCCESS" or .state == "SUCCESS";
+    .conclusion == "SUCCESS" or .conclusion == "SKIPPED" or .conclusion == "NEUTRAL" or
+    .state == "SUCCESS";
   if (.statusCheckRollup | length) == 0 then "passing"
   elif ([.statusCheckRollup[] | select(is_pending)] | length) > 0 then "pending"
   elif ([.statusCheckRollup[] | select(is_success)] | length) == (.statusCheckRollup | length) then "passing"
