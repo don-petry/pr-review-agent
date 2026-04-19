@@ -7,7 +7,7 @@
 #
 # Filters:
 #   --draft=false       — skip work-in-progress PRs
-#   --checks passing    — only include PRs where all CI checks are green;
+#   --checks success    — only include PRs where all CI checks are green;
 #                         failing or pending CI PRs are excluded here so they
 #                         never consume a review slot. review-one-pr.sh also
 #                         enforces this per-PR as a second layer of defence.
@@ -20,7 +20,7 @@ authored=$(gh search prs \
   --state open \
   --author "@me" \
   --draft=false \
-  --checks passing \
+  --checks success \
   --limit 100 \
   --json url \
   --jq '.[].url')
@@ -29,7 +29,7 @@ review_requested=$(gh search prs \
   --state open \
   --review-requested "@me" \
   --draft=false \
-  --checks passing \
+  --checks success \
   --limit 100 \
   --json url \
   --jq '.[].url')
