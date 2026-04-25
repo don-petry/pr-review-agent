@@ -208,7 +208,13 @@ echo "    [tier1] escalate=$TRIAGE_ESCALATE risk=$TRIAGE_RISK signals=[$TRIAGE_S
 if [ "$TRIAGE_ESCALATE" = "false" ]; then
   echo "    [approve] triage cleared — running single confirmation ($ENGINE_SINGLE_MODEL)"
   export REVIEW_MODE="triage-approved"
-  run_agentic prompts/single-review.md "$ENGINE_SINGLE_MODEL"
+  VERDICT_JSON="/tmp/cascade/single-review-verdict.json"
+  OUTPUT_FILE="$VERDICT_JSON"
+  export OUTPUT_FILE
+  run_agentic prompts/single-review.md "$ENGINE_SINGLE_MODEL" > "$VERDICT_JSON"
+
+  # Post the review using the verdict
+  bash scripts/post-pr-review.sh "$PR_URL" "$VERDICT_JSON" "$DRY_RUN"
   echo "    [done]  $PR_URL"
   exit 0
 fi
@@ -315,7 +321,13 @@ if [ "$COMBINED_ESCALATE" != "true" ]; then
   else
     export FINAL_TIER="deep"
   fi
-  run_agentic prompts/cascade-action.md "$ENGINE_ACTION_MODEL"
+  VERDICT_JSON="/tmp/cascade/cascade-action-verdict.json"
+  OUTPUT_FILE="$VERDICT_JSON"
+  export OUTPUT_FILE
+  run_agentic prompts/cascade-action.md "$ENGINE_ACTION_MODEL" > "$VERDICT_JSON"
+
+  # Post the review using the verdict
+  bash scripts/post-pr-review.sh "$PR_URL" "$VERDICT_JSON" "$DRY_RUN"
   echo "    [done]  $PR_URL"
   exit 0
 fi
@@ -349,6 +361,12 @@ echo "    [action] security audit resolved — posting review"
 FINAL_RESULT="$OUTPUT_FILE"
 export FINAL_RESULT
 export FINAL_TIER="audit"
-run_agentic prompts/cascade-action.md "$ENGINE_ACTION_MODEL"
+VERDICT_JSON="/tmp/cascade/cascade-action-verdict-audit.json"
+OUTPUT_FILE="$VERDICT_JSON"
+export OUTPUT_FILE
+run_agentic prompts/cascade-action.md "$ENGINE_ACTION_MODEL" > "$VERDICT_JSON"
+
+# Post the review using the verdict
+bash scripts/post-pr-review.sh "$PR_URL" "$VERDICT_JSON" "$DRY_RUN"
 
 echo "    [done]  $PR_URL"
