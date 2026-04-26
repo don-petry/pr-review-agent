@@ -52,6 +52,15 @@ jobs:
   review:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    steps:
+      - name: Generate GitHub App token
+        uses: actions/create-github-app-token@v1
+        id: app-token
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: petry-projects
+
     env:
       # Auth for every gh / script call in this job. The PAT must belong to BOT_USER.
       GH_TOKEN: ${{ secrets.DON_PETRY_BOT_GH_PAT }}
