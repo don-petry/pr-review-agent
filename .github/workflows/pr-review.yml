@@ -52,15 +52,6 @@ jobs:
   review:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    steps:
-      - name: Generate GitHub App token
-        uses: actions/create-github-app-token@v1
-        id: app-token
-        with:
-          app-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          owner: petry-projects
-
     env:
       # Auth for every gh / script call in this job. The PAT must belong to BOT_USER.
       GH_TOKEN: ${{ secrets.DON_PETRY_BOT_GH_PAT }}
@@ -97,6 +88,13 @@ jobs:
       FORCE_REVIEW: ${{ github.event_name == 'repository_dispatch' && 'true' || inputs.force_review || 'false' }}
 
     steps:
+      - name: Generate GitHub App token
+        uses: actions/create-github-app-token@v1
+        id: app-token
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: petry-projects
       - name: Checkout agent repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -107,6 +105,8 @@ jobs:
           key: claude-code-${{ env.CLAUDE_CODE_VERSION }}-${{ runner.os }}
 
       - name: Install review engine CLIs
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
           gh auth status
