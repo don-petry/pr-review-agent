@@ -87,7 +87,6 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           gh auth status
-          gh api user --jq '.login'
 
       - name: Enumerate candidate PRs
         id: list
