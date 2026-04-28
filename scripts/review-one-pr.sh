@@ -211,7 +211,9 @@ if [ "$TRIAGE_ESCALATE" = "false" ]; then
   VERDICT_JSON="/tmp/cascade/single-review-verdict.json"
   OUTPUT_FILE="$VERDICT_JSON"
   export OUTPUT_FILE
-  run_agentic prompts/single-review.md "$ENGINE_SINGLE_MODEL" > "$VERDICT_JSON"
+  run_agentic prompts/single-review.md "$ENGINE_SINGLE_MODEL" > "$VERDICT_JSON.raw"
+  extract_verdict_json "$VERDICT_JSON.raw" "$VERDICT_JSON" || { echo "::error::single-review did not produce valid JSON"; exit 1; }
+  rm -f "$VERDICT_JSON.raw"
 
   # Post the review using the verdict
   bash scripts/post-pr-review.sh "$PR_URL" "$VERDICT_JSON" "$DRY_RUN"
@@ -324,7 +326,9 @@ if [ "$COMBINED_ESCALATE" != "true" ]; then
   VERDICT_JSON="/tmp/cascade/cascade-action-verdict.json"
   OUTPUT_FILE="$VERDICT_JSON"
   export OUTPUT_FILE
-  run_agentic prompts/cascade-action.md "$ENGINE_ACTION_MODEL" > "$VERDICT_JSON"
+  run_agentic prompts/cascade-action.md "$ENGINE_ACTION_MODEL" > "$VERDICT_JSON.raw"
+  extract_verdict_json "$VERDICT_JSON.raw" "$VERDICT_JSON" || { echo "::error::cascade-action did not produce valid JSON"; exit 1; }
+  rm -f "$VERDICT_JSON.raw"
 
   # Post the review using the verdict
   bash scripts/post-pr-review.sh "$PR_URL" "$VERDICT_JSON" "$DRY_RUN"
@@ -364,7 +368,9 @@ export FINAL_TIER="audit"
 VERDICT_JSON="/tmp/cascade/cascade-action-verdict-audit.json"
 OUTPUT_FILE="$VERDICT_JSON"
 export OUTPUT_FILE
-run_agentic prompts/cascade-action.md "$ENGINE_ACTION_MODEL" > "$VERDICT_JSON"
+run_agentic prompts/cascade-action.md "$ENGINE_ACTION_MODEL" > "$VERDICT_JSON.raw"
+extract_verdict_json "$VERDICT_JSON.raw" "$VERDICT_JSON" || { echo "::error::cascade-action (audit) did not produce valid JSON"; exit 1; }
+rm -f "$VERDICT_JSON.raw"
 
 # Post the review using the verdict
 bash scripts/post-pr-review.sh "$PR_URL" "$VERDICT_JSON" "$DRY_RUN"
