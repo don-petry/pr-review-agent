@@ -342,6 +342,19 @@ if [ "$TRIAGE_RC" -ne 0 ]; then
   exit 1
 fi
 
+# Hard-fail on triage process exit. Previously this silently synthesized a
+# fake "escalate=true, MEDIUM" verdict, which masked real model regressions
+# (a broken triage prompt or model endpoint would still cost a deep review on
+# every PR while looking healthy). With the session circuit breaker upstream,
+# letting this fail loudly is the right call — the workflow aborts the rest
+# of the session and the next hourly run retries fresh.
+if [ "$TRIAGE_RC" -ne 0 ]; then
+  echo "::warning::triage exited with code $TRIAGE_RC"
+  cat "$TRIAGE_LOG" 2>/dev/null || true
+  echo "::error::cascade failed at tier 1 (triage process exit $TRIAGE_RC) for $PR_URL"
+  exit 1
+fi
+
 # Strip ```json ... ``` markdown fences if the model wrapped its JSON in
 # them. Haiku tends to add fences despite explicit instructions not to.
 TRIAGE_RESULT=$(printf '%s' "$TRIAGE_RESULT" | sed -E '/^```[a-zA-Z]*$/d; /^```$/d')
