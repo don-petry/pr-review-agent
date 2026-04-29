@@ -100,13 +100,52 @@ fi
 
 # Count how many review cycles we've already done on this PR (number of distinct markers).
 # This prevents infinite AI delegation loops.
-REVIEW_CYCLE=$(
+PR_BODIES=$(
   gh pr view "$PR_URL" --json reviews,comments \
-    --jq '((.reviews // []) + (.comments // [])) | .[].body | select(. != null)' 2>/dev/null \
-  | grep -cE '<!-- pr-review-agent v1 sha=[a-f0-9]+' || echo 0
+    --jq '((.reviews // []) + (.comments // [])) | .[].body | select(. != null)' 2>/dev/null || true
 )
+REVIEW_CYCLE=$(echo "$PR_BODIES" | grep -cE '<!-- pr-review-agent v1 sha=[a-f0-9]+' || echo 0)
 export REVIEW_CYCLE
-echo "    review cycle: $REVIEW_CYCLE (max: ${MAX_REVIEW_CYCLES:-3})"
+MAX_CYCLES="${MAX_REVIEW_CYCLES:-3}"
+echo "    review cycle: $REVIEW_CYCLE (max: $MAX_CYCLES)"
+
+# Cycle cap: once we've reviewed this PR MAX_REVIEW_CYCLES times without it
+# merging, stop running the cascade and escalate to a human. We post a single
+# escalation comment marked with `<!-- pr-review-agent escalation -->` so
+# subsequent runs detect the marker and no-op without spamming.
+if echo "$PR_BODIES" | grep -qE '<!-- pr-review-agent escalation -->'; then
+  echo "    noop: human-escalation marker present — cascade already capped"
+  echo "{\"pr\":\"$PR_URL\",\"sha\":\"$PR_HEAD_SHA\",\"decision\":\"noop\",\"reason\":\"human-escalated\"}"
+  exit 100
+fi
+
+if [ "$REVIEW_CYCLE" -ge "$MAX_CYCLES" ]; then
+  echo "    cap: review cycle $REVIEW_CYCLE >= max $MAX_CYCLES — escalating to human"
+  if [ "${DRY_RUN:-false}" = "true" ]; then
+    echo "    DRY_RUN: would post escalation comment, add label, request reviewer"
+  else
+    ESCALATION_BODY="/tmp/cascade/escalation-comment.txt"
+    mkdir -p /tmp/cascade
+    cat > "$ESCALATION_BODY" <<ESCALATION_END
+<!-- pr-review-agent escalation -->
+
+## Automated review — human attention needed
+
+This PR has been through $REVIEW_CYCLE automated review cycles (cap: $MAX_CYCLES) without converging on an approval-and-merge state. Further automated review has been paused to avoid infinite loops.
+
+Please take a look manually, or close this PR if it's no longer needed. Once a human review resolves the situation, remove the \`needs-human-review\` label and the cascade can be re-engaged on the next push.
+
+_Posted by the don-petry PR-review cascade._
+ESCALATION_END
+    gh pr comment "$PR_URL" --body-file "$ESCALATION_BODY" 2>/dev/null || true
+    gh pr edit "$PR_URL" --add-label needs-human-review 2>/dev/null || true
+    gh pr request-review "$PR_URL" --user don-petry 2>/dev/null || true
+    rm -f "$ESCALATION_BODY"
+  fi
+  echo "{\"pr\":\"$PR_URL\",\"sha\":\"$PR_HEAD_SHA\",\"decision\":\"escalate\",\"reason\":\"max-cycles-reached\"}"
+  exit 100
+fi
+unset PR_BODIES
 
 # Detect if the PR's repo org supports AI delegation for automated fix requests.
 # Reads DELEGATION_ORGS (falls back to CLAUDE_ORGS for backward compat).
