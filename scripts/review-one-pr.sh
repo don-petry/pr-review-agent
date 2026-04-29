@@ -74,16 +74,27 @@ if [ "$CI_STATUS" = "pending" ]; then
   exit 100
 fi
 
-# 2. Idempotency: look for our marker at this SHA in existing reviews+comments
-# Extract the most recent SHA from our review marker in existing PR comments/reviews.
-# Uses (array + array) to concatenate safely when either is empty, then iterates
-# .body with null guard. The 2>/dev/null catches GraphQL field-access errors.
+# 2. Idempotency: look for our marker at this SHA in existing reviews+comments.
+# We tag every review/comment with reviews' submittedAt / comments' createdAt,
+# concatenate, sort by timestamp ascending, and take the latest body that
+# contains our marker. The previous implementation used `tail -1` over a
+# `(reviews + comments)` array concatenation, which depends on array order
+# rather than timestamp — when an old comment with a marker existed alongside
+# newer reviews with markers, it picked the wrong (older) marker SHA and
+# we re-reviewed the same head SHA on every run.
 EXISTING_MARKER_SHA=$(
   gh pr view "$PR_URL" --json reviews,comments \
-    --jq '((.reviews // []) + (.comments // [])) | .[].body | select(. != null)' 2>/dev/null \
+    --jq '
+      ((.reviews   // [] | map({when: .submittedAt, body: .body})) +
+       (.comments  // [] | map({when: .createdAt,   body: .body})))
+      | map(select(.body != null and (.body | test("<!-- pr-review-agent v1 sha=[a-f0-9]+"))))
+      | sort_by(.when)
+      | last
+      | .body // ""
+    ' 2>/dev/null \
   | grep -oE '<!-- pr-review-agent v1 sha=[a-f0-9]+' \
   | grep -oE '[a-f0-9]+$' \
-  | tail -1 || true
+  | head -1 || true
 )
 
 if [ -n "${EXISTING_MARKER_SHA:-}" ] && [ "$EXISTING_MARKER_SHA" = "$PR_HEAD_SHA" ]; then

@@ -33,6 +33,76 @@ DECISION=$(jq -r '.decision' "$VERDICT_JSON")
 RISK=$(jq -r '.risk' "$VERDICT_JSON")
 BODY=$(jq -r '.body' "$VERDICT_JSON")
 
+# mark_prior_agent_items_obsolete <pr_url>
+# After successfully posting a new review/comment, dismiss prior agent reviews
+# (state != DISMISSED) and collapse prior agent comments. Identifies agent
+# items by the body marker `<!-- pr-review-agent v1 sha=<HEX> -->`. The newest
+# agent item by timestamp (which is the just-posted one) is preserved.
+# Idempotent: prior comments already wrapped in a `<!-- pr-review-agent
+# superseded -->` sentinel are skipped to avoid recursive nesting.
+# All API calls are best-effort — failures here must not break the workflow.
+mark_prior_agent_items_obsolete() {
+  local pr_url="$1"
+  local owner_repo pr_num
+  owner_repo=$(echo "$pr_url" | sed -E 's|.*/([^/]+)/([^/]+)/pull/.*|\1/\2|')
+  pr_num=$(echo "$pr_url" | sed -E 's|.*/([0-9]+)$|\1|')
+
+  local reviews_json comments_json
+  reviews_json=$(gh api --paginate "repos/$owner_repo/pulls/$pr_num/reviews" 2>/dev/null || echo '[]')
+  comments_json=$(gh api --paginate "repos/$owner_repo/issues/$pr_num/comments" 2>/dev/null || echo '[]')
+
+  # Reviews: dismiss every prior agent review except the newest. State must
+  # be APPROVED, COMMENTED, or CHANGES_REQUESTED to be dismissable; DISMISSED
+  # ones are already handled, and PENDING ones aren't ours.
+  local stale_review_ids
+  stale_review_ids=$(echo "$reviews_json" | jq -r '
+    sort_by(.submitted_at)
+    | map(select(.body != null and (.body | test("<!-- pr-review-agent v1 sha=[a-f0-9]+"))))
+    | .[:-1]
+    | .[]
+    | select(.state == "APPROVED" or .state == "COMMENTED" or .state == "CHANGES_REQUESTED")
+    | .id
+  ' 2>/dev/null || true)
+
+  if [ -n "$stale_review_ids" ]; then
+    while IFS= read -r review_id; do
+      [ -z "$review_id" ] && continue
+      echo "  dismissing prior agent review $review_id (superseded by $PR_HEAD_SHA)"
+      gh api -X PUT "repos/$owner_repo/pulls/$pr_num/reviews/$review_id/dismissals" \
+        -f message="Superseded by automated re-review at $PR_HEAD_SHA." \
+        -f event=DISMISS >/dev/null 2>&1 || true
+    done <<< "$stale_review_ids"
+  fi
+
+  # Comments: edit each prior agent comment to wrap its body in a collapsed
+  # <details> block. The sentinel `<!-- pr-review-agent superseded -->`
+  # prevents re-wrapping on subsequent runs.
+  local stale_comments
+  stale_comments=$(echo "$comments_json" | jq -c '
+    sort_by(.created_at)
+    | map(select(.body != null and (.body | test("<!-- pr-review-agent v1 sha=[a-f0-9]+"))))
+    | .[:-1]
+    | .[]
+    | select(.body | test("<!-- pr-review-agent superseded -->") | not)
+    | {id: .id, body: .body}
+  ' 2>/dev/null || true)
+
+  if [ -n "$stale_comments" ]; then
+    while IFS= read -r entry; do
+      [ -z "$entry" ] && continue
+      local cid old_body new_body
+      cid=$(echo "$entry" | jq -r '.id')
+      old_body=$(echo "$entry" | jq -r '.body')
+      echo "  collapsing prior agent comment $cid (superseded by $PR_HEAD_SHA)"
+      new_body=$(printf '<!-- pr-review-agent superseded -->\n<details><summary><em>Superseded by automated re-review at <code>%s</code> — click to expand prior review.</em></summary>\n\n%s\n\n</details>' \
+        "$PR_HEAD_SHA" "$old_body")
+      jq -n --arg b "$new_body" '{body: $b}' \
+        | gh api -X PATCH "repos/$owner_repo/issues/comments/$cid" --input - >/dev/null 2>&1 \
+        || true
+    done <<< "$stale_comments"
+  fi
+}
+
 if [ "$DRY_RUN" = "true" ]; then
   echo "=== DRY RUN: Would post review ==="
   echo "Decision: $DECISION"
@@ -61,6 +131,10 @@ if [ "$DECISION" = "approve" ]; then
     exit 1
   }
   rm -f "$BODY_FILE"
+
+  # Dismiss prior agent reviews / collapse prior agent comments now that the
+  # newest review has landed. Best-effort: failures here don't break the run.
+  mark_prior_agent_items_obsolete "$PR_URL"
 
   # Check merge state and rebase if needed
   MERGE_STATE=$(gh pr view "$PR_URL" --json mergeStateStatus --jq '.mergeStateStatus')
@@ -119,6 +193,10 @@ COMMENT_END
     echo "Posting fix-request comment..."
     gh pr comment "$PR_URL" --body "$(cat "$COMMENT_FILE")" || true
     rm -f "$COMMENT_FILE"
+
+    # Supersede prior agent reviews/comments now that the newest fix-request
+    # has landed. A new fix-request also invalidates any prior approval.
+    mark_prior_agent_items_obsolete "$PR_URL"
   else
     # Escalate to human
     echo "Escalating to human review..."
