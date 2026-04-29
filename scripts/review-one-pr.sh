@@ -164,23 +164,40 @@ mkdir -p /tmp/cascade
 # --- Tier 1: Triage (fast, no tools, pre-fetched context) ---
 echo "    [tier1] triage ($ENGINE_TRIAGE_MODEL)"
 
-# Pre-fetch all context so the triage tier needs no tool access.
+# Pre-fetch all context. The triage model has NO tools, so we inline every
+# field it needs into the prompt itself. (Earlier versions exported these as
+# env vars and expected the prompt to reference $PR_METADATA / $PR_DIFF —
+# but `claude --print` does not interpolate shell variables into the prompt,
+# so the model only ever saw the literal text "$PR_METADATA" and reported
+# the data as missing. Inlining the values is the fix.)
 PR_METADATA=$(gh pr view "$PR_URL" --json number,title,body,author,isDraft,baseRefName,headRefName,headRefOid,url,headRepository,headRepositoryOwner,labels,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,reviewRequests,reviews,comments,commits,closingIssuesReferences,additions,deletions,changedFiles,files 2>/dev/null || echo '{}')
-export PR_METADATA
-
 PR_DIFF=$(gh pr diff "$PR_URL" 2>/dev/null | head -3000 || echo "")
-export PR_DIFF
 
-export REVIEW_MODE="triage"
+# Build the triage prompt: static template + inlined PR context.
+TRIAGE_PROMPT_FILE="/tmp/cascade/triage-prompt.md"
+{
+  cat prompts/triage.md
+  printf '\n\n## Pre-fetched PR context\n\n'
+  printf 'PR_URL: %s\n' "$PR_URL"
+  printf 'PR_HEAD_SHA: %s\n' "$PR_HEAD_SHA"
+  printf 'DRY_RUN: %s\n' "${DRY_RUN:-false}"
+  printf 'REVIEW_MODE: triage\n'
+  if [ -n "$PRIOR_REVIEW_BODY" ]; then
+    printf '\nPRIOR_REVIEW_BODY:\n%s\n' "$PRIOR_REVIEW_BODY"
+  else
+    printf 'PRIOR_REVIEW_BODY: (empty — first review)\n'
+  fi
+  printf '\nPR_METADATA (JSON from `gh pr view`):\n%s\n' "$PR_METADATA"
+  printf '\nPR_DIFF (truncated to 3000 lines if larger):\n%s\n' "$PR_DIFF"
+} > "$TRIAGE_PROMPT_FILE"
 
 TRIAGE_LOG="/tmp/cascade/triage.log"
 TRIAGE_RESULT=$(
-  run_triage prompts/triage.md 2>"$TRIAGE_LOG"
+  run_triage "$TRIAGE_PROMPT_FILE" 2>"$TRIAGE_LOG"
 ) || true
 
-# Unset large pre-fetched env vars now that triage has consumed them.
-# PR_DIFF and PR_METADATA can be hundreds of KB; keeping them exported causes
-# E2BIG (Argument list too long) when later subprocesses (jq, claude) are forked.
+# Drop the bulky locals now that the prompt file is on disk. Keeps later
+# subprocess forks (jq, claude) from hitting E2BIG on hundreds-of-KB diffs.
 unset PR_DIFF PR_METADATA
 
 # Detect rate limit before JSON validation — exit 2 so the caller can fall back
@@ -190,6 +207,10 @@ if is_rate_limited "$TRIAGE_RESULT"; then
   echo "    rate limit message: $TRIAGE_RESULT"
   exit 2
 fi
+
+# Strip ```json ... ``` markdown fences if the model wrapped its JSON in
+# them. Haiku tends to add fences despite explicit instructions not to.
+TRIAGE_RESULT=$(printf '%s' "$TRIAGE_RESULT" | sed -E '/^```[a-zA-Z]*$/d; /^```$/d')
 
 # Validate triage output is JSON
 if ! echo "$TRIAGE_RESULT" | jq empty 2>/dev/null; then

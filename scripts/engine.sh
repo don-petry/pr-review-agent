@@ -59,15 +59,22 @@ is_rate_limited() {
 }
 
 # run_triage <prompt_file>
-# No-tool mode: reads pre-fetched context from env vars only.
-# Captures stdout (the model's JSON response).
+# No-tool mode. The prompt file already has all PR context inlined by the
+# caller (review-one-pr.sh builds it). Every tool is denied so the model
+# can't wander into the working directory and discover prs.txt or other
+# state.
+#
+# Note: --permission-mode plan was previously used here but it makes the
+# model propose a plan and ask for approval, which surfaces as conversational
+# text under --print and breaks the JSON contract. With no tools allowed,
+# permission mode is moot — leave it unset so the model just answers.
 run_triage() {
   local prompt_file="$1"
   case "$REVIEW_ENGINE" in
     claude)
       claude --print \
         --model "$ENGINE_TRIAGE_MODEL" \
-        --permission-mode plan \
+        --disallowed-tools "Bash,Read,Write,Edit,Grep,Glob,WebFetch,WebSearch,Task,TodoWrite,NotebookEdit" \
         < "$prompt_file"
       ;;
     copilot)
