@@ -192,9 +192,10 @@ TRIAGE_PROMPT_FILE="/tmp/cascade/triage-prompt.md"
 } > "$TRIAGE_PROMPT_FILE"
 
 TRIAGE_LOG="/tmp/cascade/triage.log"
+TRIAGE_RC=0
 TRIAGE_RESULT=$(
   run_triage "$TRIAGE_PROMPT_FILE" 2>"$TRIAGE_LOG"
-) || true
+) || TRIAGE_RC=$?
 
 # Drop the bulky locals now that the prompt file is on disk. Keeps later
 # subprocess forks (jq, claude) from hitting E2BIG on hundreds-of-KB diffs.
@@ -208,15 +209,29 @@ if is_rate_limited "$TRIAGE_RESULT"; then
   exit 2
 fi
 
+# Hard-fail on triage process exit. Previously this silently synthesized a
+# fake "escalate=true, MEDIUM" verdict, which masked real model regressions
+# (a broken triage prompt or model endpoint would still cost a deep review on
+# every PR while looking healthy). With the session circuit breaker upstream,
+# letting this fail loudly is the right call — the workflow aborts the rest
+# of the session and the next hourly run retries fresh.
+if [ "$TRIAGE_RC" -ne 0 ]; then
+  echo "::warning::triage exited with code $TRIAGE_RC"
+  cat "$TRIAGE_LOG" 2>/dev/null || true
+  echo "::error::cascade failed at tier 1 (triage process exit $TRIAGE_RC) for $PR_URL"
+  exit 1
+fi
+
 # Strip ```json ... ``` markdown fences if the model wrapped its JSON in
 # them. Haiku tends to add fences despite explicit instructions not to.
 TRIAGE_RESULT=$(printf '%s' "$TRIAGE_RESULT" | sed -E '/^```[a-zA-Z]*$/d; /^```$/d')
 
-# Validate triage output is JSON
 if ! echo "$TRIAGE_RESULT" | jq empty 2>/dev/null; then
-  echo "    [tier1] triage returned non-JSON, escalating by default"
-  echo "    triage output: $TRIAGE_RESULT"
-  TRIAGE_RESULT='{"escalate":true,"risk":"MEDIUM","signals":["triage-output-invalid"],"summary":"triage failed, escalating"}'
+  echo "::warning::triage returned non-JSON output"
+  echo "    triage stdout: $TRIAGE_RESULT"
+  cat "$TRIAGE_LOG" 2>/dev/null || true
+  echo "::error::cascade failed at tier 1 (triage non-JSON) for $PR_URL"
+  exit 1
 fi
 
 export TRIAGE_RESULT
