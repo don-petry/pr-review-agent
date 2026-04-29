@@ -99,7 +99,7 @@ if [ -n "${EXISTING_MARKER_SHA:-}" ]; then
 fi
 
 # Count how many review cycles we've already done on this PR (number of distinct markers).
-# This prevents infinite AI delegation loops.
+# This prevents infinite review loops (AI-delegation OR cascade-only).
 PR_BODIES=$(
   gh pr view "$PR_URL" --json reviews,comments \
     --jq '((.reviews // []) + (.comments // [])) | .[].body | select(. != null)' 2>/dev/null || true
@@ -137,7 +137,7 @@ Please take a look manually, or close this PR if it's no longer needed. Once a h
 
 _Posted by the don-petry PR-review cascade._
 ESCALATION_END
-    gh pr comment "$PR_URL" --body-file "$ESCALATION_BODY" 2>/dev/null || true
+    gh pr comment "$PR_URL" --body-file "$ESCALATION_BODY" || echo "    warn: gh pr comment failed — escalation marker not posted; will retry next cycle"
     gh pr edit "$PR_URL" --add-label needs-human-review 2>/dev/null || true
     gh pr request-review "$PR_URL" --user don-petry 2>/dev/null || true
     rm -f "$ESCALATION_BODY"
@@ -145,7 +145,6 @@ ESCALATION_END
   echo "{\"pr\":\"$PR_URL\",\"sha\":\"$PR_HEAD_SHA\",\"decision\":\"escalate\",\"reason\":\"max-cycles-reached\"}"
   exit 100
 fi
-unset PR_BODIES
 
 # Detect if the PR's repo org supports AI delegation for automated fix requests.
 # Reads DELEGATION_ORGS (falls back to CLAUDE_ORGS for backward compat).
