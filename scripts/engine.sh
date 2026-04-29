@@ -239,6 +239,18 @@ print(content, end='')
 " || return 1
 }
 
+# is_transient_failure <exit_code>
+# Returns 0 (true) for exit codes suggesting a flaky network/process state:
+# 124 (GNU timeout) and 137/143 (signal kills). JSON parse failures and
+# generic exit-1s are NOT retried — those are deterministic problems.
+is_transient_failure() {
+  local rc="$1"
+  case "$rc" in
+    124|137|143) return 0 ;;
+    *)           return 1 ;;
+  esac
+}
+
 # run_triage <prompt_file>
 # No-tool mode. The prompt file already has all PR context inlined by the
 # caller (review-one-pr.sh builds it). Every tool is denied so the model
