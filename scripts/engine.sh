@@ -12,6 +12,22 @@
 REVIEW_ENGINE="${REVIEW_ENGINE:-claude}"
 export REVIEW_ENGINE
 
+# Per-tier timeouts (seconds). The job-level 60min cap is a backstop — without
+# per-tier timeouts a single hung model invocation burns the whole hour and
+# blocks every subsequent PR in the session.
+TRIAGE_TIMEOUT_SEC="${TRIAGE_TIMEOUT_SEC:-180}"
+DEEP_TIMEOUT_SEC="${DEEP_TIMEOUT_SEC:-600}"
+AUDIT_TIMEOUT_SEC="${AUDIT_TIMEOUT_SEC:-600}"
+ACTION_TIMEOUT_SEC="${ACTION_TIMEOUT_SEC:-300}"
+DUCK_TIMEOUT_SEC="${DUCK_TIMEOUT_SEC:-300}"
+
+# Retry config for transient errors. We treat exit codes that look like
+# network/process flakiness (124=GNU timeout, 137/143=signal kills, plus a
+# couple of generic transient codes) as retryable. Rate-limit (engine-level)
+# is NOT retryable here — the workflow's engine-fallback handles that.
+RETRY_MAX_ATTEMPTS="${RETRY_MAX_ATTEMPTS:-2}"   # total attempts including first
+RETRY_BASE_DELAY_SEC="${RETRY_BASE_DELAY_SEC:-5}"
+
 case "$REVIEW_ENGINE" in
   claude)
     ENGINE_TRIAGE_MODEL="claude-haiku-4-5-20251001"
@@ -58,49 +74,88 @@ is_rate_limited() {
   echo "$text" | grep -qiE "(hit your limit|rate[ -]?limit|resets [0-9]+(am|pm)|usage limit|quota exceeded|too many requests|exceeded.*quota)"
 }
 
+# is_transient_failure <exit_code>
+# Returns 0 (true) for exit codes suggesting a flaky network/process state:
+# 124 (GNU timeout) and 137/143 (signal kills). JSON parse failures and
+# generic exit-1s are NOT retried — those are deterministic problems.
+is_transient_failure() {
+  local rc="$1"
+  case "$rc" in
+    124|137|143) return 0 ;;
+    *)           return 1 ;;
+  esac
+}
+
 # run_triage <prompt_file>
 # No-tool mode. The prompt file already has all PR context inlined by the
 # caller (review-one-pr.sh builds it). Every tool is denied so the model
 # can't wander into the working directory and discover prs.txt or other
 # state.
 #
-# Note: --permission-mode plan was previously used here but it makes the
-# model propose a plan and ask for approval, which surfaces as conversational
-# text under --print and breaks the JSON contract. With no tools allowed,
-# permission mode is moot — leave it unset so the model just answers.
+# `--permission-mode plan` is intentionally NOT set — under --print it makes
+# the model propose a plan and ask for approval, which surfaces as
+# conversational text and breaks the JSON contract. With every tool denied,
+# permission mode is moot anyway.
+#
+# Wrapped in a transient-retry loop because the caller captures stdout via
+# $(...), so re-running on a timeout/kill is safe — the variable receives only
+# the last attempt's output. Per-tier timeout from TRIAGE_TIMEOUT_SEC.
 run_triage() {
   local prompt_file="$1"
-  case "$REVIEW_ENGINE" in
-    claude)
-      claude --print \
-        --model "$ENGINE_TRIAGE_MODEL" \
-        --disallowed-tools "Bash,Read,Write,Edit,Grep,Glob,WebFetch,WebSearch,Task,TodoWrite,NotebookEdit" \
-        < "$prompt_file"
-      ;;
-    copilot)
-      copilot \
-        -p "$(cat "$prompt_file")" \
-        --model "$ENGINE_TRIAGE_MODEL" \
-        -s --no-ask-user
-      ;;
-  esac
+  local attempt=1 rc=0
+  while [ "$attempt" -le "$RETRY_MAX_ATTEMPTS" ]; do
+    rc=0
+    case "$REVIEW_ENGINE" in
+      claude)
+        timeout "$TRIAGE_TIMEOUT_SEC" claude --print \
+          --model "$ENGINE_TRIAGE_MODEL" \
+          --disallowed-tools "Bash,Read,Write,Edit,Grep,Glob,WebFetch,WebSearch,Task,TodoWrite,NotebookEdit" \
+          < "$prompt_file" || rc=$?
+        ;;
+      copilot)
+        timeout "$TRIAGE_TIMEOUT_SEC" copilot \
+          -p "$(cat "$prompt_file")" \
+          --model "$ENGINE_TRIAGE_MODEL" \
+          -s --no-ask-user || rc=$?
+        ;;
+    esac
+    if [ "$rc" -eq 0 ]; then
+      return 0
+    fi
+    if [ "$attempt" -lt "$RETRY_MAX_ATTEMPTS" ] && is_transient_failure "$rc"; then
+      local delay=$(( RETRY_BASE_DELAY_SEC * (2 ** (attempt - 1)) ))
+      echo "    [triage] transient failure (exit $rc), retrying in ${delay}s (attempt $((attempt + 1))/$RETRY_MAX_ATTEMPTS)" >&2
+      sleep "$delay"
+      attempt=$((attempt + 1))
+      continue
+    fi
+    return "$rc"
+  done
+  return "$rc"
 }
 
 # run_agentic <prompt_file> <model>
 # Full tool access (Bash, Read, Grep, Glob). Output to stdout.
+#
+# No retry here: callers redirect stdout to a file, so a retry inside this
+# function would append the second attempt's output to a partial first-attempt
+# file. Transient failures here become session-fatal via the workflow circuit
+# breaker — that's the intended trade-off for the long, expensive tier.
+# Per-tier timeout from DEEP_TIMEOUT_SEC (also applies to action/audit calls;
+# they're all the same agentic shape and similarly priced).
 run_agentic() {
   local prompt_file="$1"
   local model="$2"
   case "$REVIEW_ENGINE" in
     claude)
-      claude --print \
+      timeout "$DEEP_TIMEOUT_SEC" claude --print \
         --model "$model" \
         --permission-mode acceptEdits \
         --allowed-tools "Bash,Read,Grep,Glob" \
         < "$prompt_file"
       ;;
     copilot)
-      copilot \
+      timeout "$DEEP_TIMEOUT_SEC" copilot \
         -p "$(cat "$prompt_file")" \
         --model "$model" \
         -s --allow-all --no-ask-user
@@ -152,7 +207,7 @@ run_duck() {
   case "$DUCK_ENGINE" in
     claude)
       unset COPILOT_GITHUB_TOKEN 2>/dev/null || true
-      timeout 300 claude --print \
+      timeout "$DUCK_TIMEOUT_SEC" claude --print \
         --model "$model" \
         --permission-mode acceptEdits \
         --allowed-tools "Bash,Read,Grep,Glob" \
@@ -161,7 +216,7 @@ run_duck() {
       ;;
     copilot)
       unset CLAUDE_CODE_OAUTH_TOKEN 2>/dev/null || true
-      timeout 300 copilot \
+      timeout "$DUCK_TIMEOUT_SEC" copilot \
         -p "$(cat "$prompt_file")" \
         --model "$model" \
         -s --allow-all --no-ask-user

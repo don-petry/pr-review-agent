@@ -74,16 +74,27 @@ if [ "$CI_STATUS" = "pending" ]; then
   exit 100
 fi
 
-# 2. Idempotency: look for our marker at this SHA in existing reviews+comments
-# Extract the most recent SHA from our review marker in existing PR comments/reviews.
-# Uses (array + array) to concatenate safely when either is empty, then iterates
-# .body with null guard. The 2>/dev/null catches GraphQL field-access errors.
+# 2. Idempotency: look for our marker at this SHA in existing reviews+comments.
+# We tag every review/comment with reviews' submittedAt / comments' createdAt,
+# concatenate, sort by timestamp ascending, and take the latest body that
+# contains our marker. The previous implementation used `tail -1` over a
+# `(reviews + comments)` array concatenation, which depends on array order
+# rather than timestamp — when an old comment with a marker existed alongside
+# newer reviews with markers, it picked the wrong (older) marker SHA and
+# we re-reviewed the same head SHA on every run.
 EXISTING_MARKER_SHA=$(
   gh pr view "$PR_URL" --json reviews,comments \
-    --jq '((.reviews // []) + (.comments // [])) | .[].body | select(. != null)' 2>/dev/null \
+    --jq '
+      ((.reviews   // [] | map({when: .submittedAt, body: .body})) +
+       (.comments  // [] | map({when: .createdAt,   body: .body})))
+      | map(select(.body != null and (.body | test("<!-- pr-review-agent v1 sha=[a-f0-9]+"))))
+      | sort_by(.when)
+      | last
+      | .body // ""
+    ' 2>/dev/null \
   | grep -oE '<!-- pr-review-agent v1 sha=[a-f0-9]+' \
   | grep -oE '[a-f0-9]+$' \
-  | tail -1 || true
+  | head -1 || true
 )
 
 if [ -n "${EXISTING_MARKER_SHA:-}" ] && [ "$EXISTING_MARKER_SHA" = "$PR_HEAD_SHA" ]; then
@@ -230,9 +241,10 @@ TRIAGE_PROMPT_FILE="/tmp/cascade/triage-prompt.md"
 } > "$TRIAGE_PROMPT_FILE"
 
 TRIAGE_LOG="/tmp/cascade/triage.log"
+TRIAGE_RC=0
 TRIAGE_RESULT=$(
   run_triage "$TRIAGE_PROMPT_FILE" 2>"$TRIAGE_LOG"
-) || true
+) || TRIAGE_RC=$?
 
 # Drop the bulky locals now that the prompt file is on disk. Keeps later
 # subprocess forks (jq, claude) from hitting E2BIG on hundreds-of-KB diffs.
@@ -246,15 +258,29 @@ if is_rate_limited "$TRIAGE_RESULT"; then
   exit 2
 fi
 
+# Hard-fail on triage process exit. Previously this silently synthesized a
+# fake "escalate=true, MEDIUM" verdict, which masked real model regressions
+# (a broken triage prompt or model endpoint would still cost a deep review on
+# every PR while looking healthy). With the session circuit breaker upstream,
+# letting this fail loudly is the right call — the workflow aborts the rest
+# of the session and the next hourly run retries fresh.
+if [ "$TRIAGE_RC" -ne 0 ]; then
+  echo "::warning::triage exited with code $TRIAGE_RC"
+  cat "$TRIAGE_LOG" 2>/dev/null || true
+  echo "::error::cascade failed at tier 1 (triage process exit $TRIAGE_RC) for $PR_URL"
+  exit 1
+fi
+
 # Strip ```json ... ``` markdown fences if the model wrapped its JSON in
 # them. Haiku tends to add fences despite explicit instructions not to.
 TRIAGE_RESULT=$(printf '%s' "$TRIAGE_RESULT" | sed -E '/^```[a-zA-Z]*$/d; /^```$/d')
 
-# Validate triage output is JSON
 if ! echo "$TRIAGE_RESULT" | jq empty 2>/dev/null; then
-  echo "    [tier1] triage returned non-JSON, escalating by default"
-  echo "    triage output: $TRIAGE_RESULT"
-  TRIAGE_RESULT='{"escalate":true,"risk":"MEDIUM","signals":["triage-output-invalid"],"summary":"triage failed, escalating"}'
+  echo "::warning::triage returned non-JSON output"
+  echo "    triage stdout: $TRIAGE_RESULT"
+  cat "$TRIAGE_LOG" 2>/dev/null || true
+  echo "::error::cascade failed at tier 1 (triage non-JSON) for $PR_URL"
+  exit 1
 fi
 
 export TRIAGE_RESULT
