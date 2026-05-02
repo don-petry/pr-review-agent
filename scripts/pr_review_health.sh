@@ -32,7 +32,7 @@ echo "  Date:         $TODAY"
 echo ""
 
 # ---------------------------------------------------------------------------
-# 0. Token selection — App token preferred; PAT fallback for don-petry/self
+# 0. Token selection — App token preferred; PAT fallback for don-petry/pr-review-agent
 # ---------------------------------------------------------------------------
 if ! gh api "repos/${WORKFLOW_REPO}/actions/workflows/${WORKFLOW_FILE}/runs?per_page=1" \
      >/dev/null 2>&1; then
@@ -125,7 +125,7 @@ RUNS_SUMMARY=$(echo "$runs_json" | jq -r \
 
 logs_file=$(mktemp)
 # Pre-compute run metadata as id→label map (one jq pass)
-declare -A run_meta_map
+declare -A run_meta_map  # requires bash 4+ (ubuntu-latest ships bash 5)
 while IFS=$'\t' read -r rid label; do
   run_meta_map["$rid"]="$label"
 done < <(echo "$runs_json" | jq -r \
