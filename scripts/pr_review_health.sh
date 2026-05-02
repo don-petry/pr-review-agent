@@ -124,23 +124,17 @@ RUNS_SUMMARY=$(echo "$runs_json" | jq -r \
   '.[] | "[\(.conclusion // "unknown")] run #\(.run_number) (\(.created_at)) — \(.html_url)"')
 
 logs_file=$(mktemp)
-# Pre-compute run metadata as id→label map (one jq pass)
-declare -A run_meta_map  # requires bash 4+ (ubuntu-latest ships bash 5)
-while IFS=$'\t' read -r rid label; do
-  run_meta_map["$rid"]="$label"
-done < <(echo "$runs_json" | jq -r \
-  '.[] | [(.id | tostring), "run #\(.run_number) (\(.conclusion)) at \(.created_at)"] | @tsv')
-
-for log_file in "$LOG_DIR"/run_*.txt; do
+# One jq pass over failed runs; append each log file in the same order
+while IFS=$'\t' read -r run_id run_meta; do
+  log_file="${LOG_DIR}/run_${run_id}.txt"
   [ -f "$log_file" ] || continue
-  run_id=$(basename "$log_file" .txt | sed 's/run_//')
-  run_meta="${run_meta_map[$run_id]:-run $run_id}"
   {
     printf '=== LOG: %s ===\n' "$run_meta"
     cat "$log_file"
     printf '=== END LOG ===\n\n'
   } >> "$logs_file"
-done
+done < <(echo "$runs_json" | jq -r \
+  '.[] | select(.conclusion == "failure") | [(.id | tostring), "run #\(.run_number) (\(.conclusion)) at \(.created_at)"] | @tsv')
 
 echo "Invoking Claude for log analysis..."
 claude --print --model claude-sonnet-4-6 > "$REPORT_FILE" <<PROMPT
