@@ -4,9 +4,7 @@ on:
   schedule:
     # Daily at 10:00 UTC — covers same-day run history before US work hours
     - cron: '0 10 * * *'
-  push:
-    branches: [claude/confident-gates-cf9485]  # TEMP: remove before merge
-  workflow_dispatch:
+workflow_dispatch:
     inputs:
       lookback_days:
         description: "Days of run history to inspect"
