@@ -1,0 +1,100 @@
+name: Daily PR Review Health Check
+
+on:
+  schedule:
+    # Daily at 10:00 UTC — covers same-day run history before US work hours
+    - cron: '0 10 * * *'
+workflow_dispatch:
+    inputs:
+      lookback_days:
+        description: "Days of run history to inspect"
+        required: false
+        default: "7"
+        type: string
+      run_limit:
+        description: "Max recent runs to inspect"
+        required: false
+        default: "10"
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: daily-pr-review-health
+  cancel-in-progress: true
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      LOOKBACK_DAYS: ${{ inputs.lookback_days || '7' }}
+      RUN_LIMIT: ${{ inputs.run_limit || '10' }}
+
+    steps:
+      - name: Generate GitHub App token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547  # v1
+        id: app-token
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: petry-projects
+
+      - name: Checkout agent repo
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: '20'
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run health check
+        env:
+          # App token covers petry-projects scope. If it lacks access to
+          # don-petry/pr-review-agent, set GH_PAT_WORKFLOWS as fallback.
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_PAT_FALLBACK: ${{ secrets.GH_PAT_WORKFLOWS }}
+        run: bash scripts/pr_review_health.sh
+
+      - name: Truncate report if needed
+        run: |
+          if [ -f pr_review_health_report.md ]; then
+            if [ "$(wc -c < pr_review_health_report.md)" -gt 60000 ]; then
+              head -c 60000 pr_review_health_report.md > pr_review_health_report.md.tmp
+              mv pr_review_health_report.md.tmp pr_review_health_report.md
+              printf '\n\n---\n_Report truncated at 60 000 bytes._\n' >> pr_review_health_report.md
+            fi
+          fi
+
+      - name: Create issue with findings
+        if: env.HAS_FAILURES == 'true' && hashFiles('pr_review_health_report.md') != ''
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b  # v7
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('pr_review_health_report.md', 'utf8');
+            if (!report.trim()) {
+              core.setFailed('Report file is empty');
+              return;
+            }
+            const today = new Date().toISOString().split('T')[0];
+            const issue = await github.rest.issues.create({
+              owner: 'don-petry',
+              repo: 'pr-review-agent',
+              title: `PR Review Agent — failures detected ${today}`,
+              body: report,
+              labels: ['health-check', 'automated-report'],
+            });
+            core.notice(`Issue created: ${issue.data.html_url}`);
+
+      - name: Annotate clean run
+        if: env.HAS_FAILURES != 'true'
+        run: |
+          echo "::notice::Health check passed — no failures in the last ${LOOKBACK_DAYS} days (up to ${RUN_LIMIT} runs inspected)."
