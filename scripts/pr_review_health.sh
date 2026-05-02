@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Daily health check for the PR Review Agent workflow (don-petry/self).
+# Daily health check for the PR Review Agent workflow (don-petry/pr-review-agent).
 #
 # Fetches recent pr-review.yml run logs, feeds them to Claude for pattern
 # analysis, and writes a markdown report to pr_review_health_report.md.
 # Sets HAS_FAILURES=true in $GITHUB_ENV when failed runs are detected.
 #
 # Env vars consumed:
-#   GH_TOKEN              — primary (GitHub App; must have actions:read on don-petry/self)
-#   GH_PAT_FALLBACK       — fallback PAT if App token can't access personal repo
+#   GH_TOKEN              — primary (GitHub App; must have actions:read on this repo)
+#   GH_PAT_FALLBACK       — fallback PAT if App token lacks access
 #   CLAUDE_CODE_OAUTH_TOKEN — passed through to claude CLI
 #   LOOKBACK_DAYS         — days of history to consider (default: 7)
 #   RUN_LIMIT             — max runs to inspect (default: 10)
@@ -35,7 +35,7 @@ echo ""
 # 0. Token selection — App token preferred; PAT fallback for don-petry/self
 # ---------------------------------------------------------------------------
 if ! gh api "repos/${WORKFLOW_REPO}/actions/workflows/${WORKFLOW_FILE}/runs?per_page=1" \
-     --silent >/dev/null 2>&1; then
+     >/dev/null 2>&1; then
   if [ -n "${GH_PAT_FALLBACK:-}" ]; then
     echo "::warning::App token cannot access ${WORKFLOW_REPO} run logs — using GH_PAT_FALLBACK"
     export GH_TOKEN="$GH_PAT_FALLBACK"
@@ -65,10 +65,13 @@ runs_json=$(gh api \
     run_number: .run_number
   })' 2>/dev/null || echo '[]')
 
-total_runs=$(echo "$runs_json" | jq 'length')
-failed_runs=$(echo "$runs_json" | jq '[.[] | select(.conclusion == "failure")] | length')
-success_runs=$(echo "$runs_json" | jq '[.[] | select(.conclusion == "success")] | length')
-cancelled_runs=$(echo "$runs_json" | jq '[.[] | select(.conclusion == "cancelled")] | length')
+read -r total_runs failed_runs success_runs cancelled_runs < <(echo "$runs_json" | jq -r '
+  [
+    length,
+    ([.[] | select(.conclusion == "failure")] | length),
+    ([.[] | select(.conclusion == "success")] | length),
+    ([.[] | select(.conclusion == "cancelled")] | length)
+  ] | @tsv')
 
 echo "  Total runs:   $total_runs"
 echo "  Successful:   $success_runs"
@@ -96,15 +99,14 @@ mkdir -p "$LOG_DIR"
 failed_run_ids=$(echo "$runs_json" | jq -r '.[] | select(.conclusion == "failure") | .id')
 
 for run_id in $failed_run_ids; do
-  log_file="${LOG_DIR}/run_${run_id}.txt"
-  echo "  Downloading logs for run $run_id..."
-  gh run view "$run_id" --repo "$WORKFLOW_REPO" --log 2>/dev/null \
-    | head -c 200000 \
-    > "$log_file" || {
-      echo "  ::warning::Could not fetch logs for run $run_id — skipping"
-      echo "(log unavailable for run $run_id)" > "$log_file"
-    }
+  {
+    gh run view "$run_id" --repo "$WORKFLOW_REPO" --log 2>/dev/null \
+      | head -c 200000 \
+      > "${LOG_DIR}/run_${run_id}.txt" \
+      || echo "(log unavailable for run $run_id)" > "${LOG_DIR}/run_${run_id}.txt"
+  } &
 done
+wait
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -121,21 +123,28 @@ workflow_source=$(gh api \
 RUNS_SUMMARY=$(echo "$runs_json" | jq -r \
   '.[] | "[\(.conclusion // "unknown")] run #\(.run_number) (\(.created_at)) — \(.html_url)"')
 
-all_logs=""
+logs_file=$(mktemp)
+# Pre-compute run metadata as id→label map (one jq pass)
+declare -A run_meta_map
+while IFS=$'\t' read -r rid label; do
+  run_meta_map["$rid"]="$label"
+done < <(echo "$runs_json" | jq -r \
+  '.[] | [(.id | tostring), "run #\(.run_number) (\(.conclusion)) at \(.created_at)"] | @tsv')
+
 for log_file in "$LOG_DIR"/run_*.txt; do
   [ -f "$log_file" ] || continue
   run_id=$(basename "$log_file" .txt | sed 's/run_//')
-  run_meta=$(echo "$runs_json" | jq -r --argjson id "$run_id" \
-    '.[] | select(.id == $id) | "run #\(.run_number) (\(.conclusion)) at \(.created_at)"' 2>/dev/null \
-    || echo "run $run_id")
-  all_logs="${all_logs}
-=== LOG: ${run_meta} ===
-$(cat "$log_file")
-=== END LOG ===
-"
+  run_meta="${run_meta_map[$run_id]:-run $run_id}"
+  {
+    printf '=== LOG: %s ===\n' "$run_meta"
+    cat "$log_file"
+    printf '=== END LOG ===\n\n'
+  } >> "$logs_file"
 done
 
-PROMPT="You are analyzing GitHub Actions workflow run logs for the PR Review Agent.
+echo "Invoking Claude for log analysis..."
+claude --print --model claude-sonnet-4-6 > "$REPORT_FILE" <<PROMPT
+You are analyzing GitHub Actions workflow run logs for the PR Review Agent.
 
 ## Context
 - Workflow: \`${WORKFLOW_FILE}\` in repo \`${WORKFLOW_REPO}\`
@@ -152,7 +161,7 @@ ${workflow_source}
 \`\`\`
 
 ## Failed Run Logs
-${all_logs}
+$(cat "$logs_file")
 
 ---
 
@@ -189,10 +198,9 @@ Mark CRITICAL if the issue causes 100% workflow failure.
 Single line: \`Health: X/10 — <one-sentence verdict>\`
 (10 = all runs passing; 0 = complete outage)
 
-Output ONLY the markdown report — no preamble or commentary outside the report sections."
-
-echo "Invoking Claude for log analysis..."
-claude --print --model claude-sonnet-4-6 <<< "$PROMPT" > "$REPORT_FILE"
+Output ONLY the markdown report — no preamble or commentary outside the report sections.
+PROMPT
+rm -f "$logs_file"
 
 echo ""
 echo "Report written to $REPORT_FILE ($(wc -c < "$REPORT_FILE") bytes)"
