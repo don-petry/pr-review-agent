@@ -1,0 +1,5 @@
+# Claude Code worktrees — these are ephemeral scratch directories created by
+# Claude Code during agentic runs and must not be committed to the repository.
+# The actions/checkout post-job sweep trips on unregistered git directories
+# here and emits exit-128 warnings on every run.
+.claude/worktrees/
