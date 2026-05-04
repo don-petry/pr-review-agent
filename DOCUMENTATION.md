@@ -98,7 +98,7 @@ All secrets must be set in the repository (`Settings â†’ Secrets and variables â
 | Secret | Purpose |
 |--------|---------|
 | `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code API access |
-| `DON_PETRY_BOT_GH_PAT` | Machine user fine-grained PAT |
+| `DON_PETRY_BOT_PETRY_PROJECT_PAT` | Machine user fine-grained PAT |
 | `COPILOT_GITHUB_TOKEN` | Optional fallback engine |
 
 ## Review Workflow

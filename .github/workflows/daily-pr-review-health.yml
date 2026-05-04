@@ -48,9 +48,9 @@ jobs:
 
       - name: Run health check
         env:
-          # DON_PETRY_BOT_GH_PAT covers petry-projects scope. If it lacks access to
+          # DON_PETRY_BOT_PETRY_PROJECT_PAT covers petry-projects scope. If it lacks access to
           # don-petry/pr-review-agent, set GH_PAT_WORKFLOWS as fallback.
-          GH_TOKEN: ${{ secrets.DON_PETRY_BOT_GH_PAT }}
+          GH_TOKEN: ${{ secrets.DON_PETRY_BOT_PETRY_PROJECT_PAT }}
           GH_PAT_FALLBACK: ${{ secrets.GH_PAT_WORKFLOWS }}
         run: bash scripts/pr_review_health.sh
 
@@ -68,7 +68,7 @@ jobs:
         if: env.HAS_FAILURES == 'true' && hashFiles('pr_review_health_report.md') != ''
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b  # v7
         with:
-          github-token: ${{ secrets.DON_PETRY_BOT_GH_PAT }}
+          github-token: ${{ secrets.DON_PETRY_BOT_PETRY_PROJECT_PAT }}
           script: |
             const fs = require('fs');
             const report = fs.readFileSync('pr_review_health_report.md', 'utf8');

@@ -6,10 +6,10 @@
 ## What Was Done
 
 ### 1. Machine User Authentication ✅
-- Machine user account with fine-grained PAT stored as `DON_PETRY_BOT_GH_PAT` org secret
+- Machine user account with fine-grained PAT stored as `DON_PETRY_BOT_PETRY_PROJECT_PAT` org secret
 - Added to org team listed in CODEOWNERS — approvals satisfy code owner review requirements
 - Configured permissions: Contents (read), Pull requests (read/write), Checks (read)
-- All workflows use `${{ secrets.DON_PETRY_BOT_GH_PAT }}` directly (no token generation step needed)
+- All workflows use `${{ secrets.DON_PETRY_BOT_PETRY_PROJECT_PAT }}` directly (no token generation step needed)
 
 **Why Machine User?** (migrated from GitHub App — see [issue #27](https://github.com/don-petry/pr-review-agent/issues/27))
 - GitHub Apps cannot be listed in CODEOWNERS (platform limitation)
@@ -89,7 +89,7 @@ Previously used: GitHub App (`petry-projects-pr-review-agent[bot]`) with auto-ex
 
 ### Required Secrets
 ```bash
-gh secret set DON_PETRY_BOT_GH_PAT --repo don-petry/pr-review-agent --body "<machine-user-pat>"
+gh secret set DON_PETRY_BOT_PETRY_PROJECT_PAT --repo don-petry/pr-review-agent --body "<machine-user-pat>"
 gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo don-petry/pr-review-agent
 ```
 

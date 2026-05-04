@@ -21,6 +21,6 @@ jobs:
 
       - name: Fix stuck PRs
         env:
-          GH_TOKEN: ${{ secrets.DON_PETRY_BOT_GH_PAT }}
+          GH_TOKEN: ${{ secrets.DON_PETRY_BOT_PETRY_PROJECT_PAT }}
         run: |
           bash scripts/fix-stuck-prs.sh "${{ inputs.dry_run }}"

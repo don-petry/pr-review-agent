@@ -20,10 +20,10 @@ This document describes the current implementation of the PR Review Agent and ke
 
 ### Token Usage
 
-All workflows use the `DON_PETRY_BOT_GH_PAT` org secret directly:
+All workflows use the `DON_PETRY_BOT_PETRY_PROJECT_PAT` org secret directly:
 ```yaml
 env:
-  GH_TOKEN: ${{ secrets.DON_PETRY_BOT_GH_PAT }}
+  GH_TOKEN: ${{ secrets.DON_PETRY_BOT_PETRY_PROJECT_PAT }}
 ```
 
 The PAT is a fine-grained token scoped to the `petry-projects` organization with 90-day expiry. See [MACHINE_USER_SETUP.md](MACHINE_USER_SETUP.md) for rotation instructions.
@@ -210,7 +210,7 @@ gh run view <run-id> --repo don-petry/pr-review-agent --log
 | Secret | Purpose |
 |--------|---------|
 | `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code authentication |
-| `DON_PETRY_BOT_GH_PAT` | Machine user PAT for GitHub API access |
+| `DON_PETRY_BOT_PETRY_PROJECT_PAT` | Machine user PAT for GitHub API access |
 | `COPILOT_GITHUB_TOKEN` | GitHub Copilot fallback token |
 
 ## File Structure

@@ -57,7 +57,7 @@ jobs:
 
       - name: Install review engine CLIs
         env:
-          GH_TOKEN: ${{ secrets.DON_PETRY_BOT_GH_PAT }}
+          GH_TOKEN: ${{ secrets.DON_PETRY_BOT_PETRY_PROJECT_PAT }}
         run: |
           # Primary engine must install successfully; duck engine is best-effort.
           case "$REVIEW_ENGINE" in
@@ -81,14 +81,14 @@ jobs:
 
       - name: Verify auth
         env:
-          GH_TOKEN: ${{ secrets.DON_PETRY_BOT_GH_PAT }}
+          GH_TOKEN: ${{ secrets.DON_PETRY_BOT_PETRY_PROJECT_PAT }}
         run: |
           gh auth status
 
       - name: Enumerate candidate PRs
         id: list
         env:
-          GH_TOKEN: ${{ secrets.DON_PETRY_BOT_GH_PAT }}
+          GH_TOKEN: ${{ secrets.DON_PETRY_BOT_PETRY_PROJECT_PAT }}
         run: |
           set -euo pipefail
           if [ -n "${PR_URL_OVERRIDE}" ]; then
@@ -107,7 +107,7 @@ jobs:
       - name: Review each PR (cascade)
         if: steps.list.outputs.count != '0'
         env:
-          GH_TOKEN: ${{ secrets.DON_PETRY_BOT_GH_PAT }}
+          GH_TOKEN: ${{ secrets.DON_PETRY_BOT_PETRY_PROJECT_PAT }}
           MAX_PRS: ${{ vars.MAX_PRS || '10' }}
           CANDIDATE_LIMIT: ${{ vars.CANDIDATE_LIMIT || '100' }}
         run: |
