@@ -9,14 +9,13 @@
 #   GH_TOKEN              — primary (GitHub App; must have actions:read on this repo)
 #   GH_PAT_FALLBACK       — fallback PAT if App token lacks access
 #   CLAUDE_CODE_OAUTH_TOKEN — passed through to claude CLI
-#   LOOKBACK_DAYS         — days of history to consider (default: 7)
-#   RUN_LIMIT             — max runs to inspect (default: 10)
+#   LOOKBACK_DAYS         — days of history to consider (default: 1, ~24 hours)
+#                           Set higher to examine longer windows (e.g., LOOKBACK_DAYS=7 for weekly review)
 #   GITHUB_ENV            — written by Actions runner; used to export HAS_FAILURES
 
 set -euo pipefail
 
-LOOKBACK_DAYS="${LOOKBACK_DAYS:-7}"
-RUN_LIMIT="${RUN_LIMIT:-10}"
+LOOKBACK_DAYS="${LOOKBACK_DAYS:-1}"
 WORKFLOW_REPO="don-petry/pr-review-agent"
 WORKFLOW_FILE="pr-review.yml"
 REPORT_FILE="pr_review_health_report.md"
@@ -26,8 +25,7 @@ TODAY=$(date -u +%Y-%m-%d)
 echo "=== PR Review Agent — Daily Health Check ==="
 echo "  Repo:         $WORKFLOW_REPO"
 echo "  Workflow:     $WORKFLOW_FILE"
-echo "  Lookback:     ${LOOKBACK_DAYS} days"
-echo "  Max runs:     $RUN_LIMIT"
+echo "  Lookback:     ${LOOKBACK_DAYS} day(s)"
 echo "  Date:         $TODAY"
 echo ""
 
@@ -53,9 +51,11 @@ fi
 CUTOFF=$(date -u -d "${LOOKBACK_DAYS} days ago" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
   || date -u -v-"${LOOKBACK_DAYS}"d +%Y-%m-%dT%H:%M:%SZ)
 
-echo "Fetching run list (cutoff: $CUTOFF)..."
+echo "Fetching all runs since: $CUTOFF"
+# Fetch with per_page=100 (GitHub API max) to capture all runs in the lookback window.
+# Time-based filtering ensures we get every run created at or after CUTOFF, regardless of quantity.
 runs_json=$(gh api \
-  "repos/${WORKFLOW_REPO}/actions/workflows/${WORKFLOW_FILE}/runs?per_page=${RUN_LIMIT}&created=>=${CUTOFF}" \
+  "repos/${WORKFLOW_REPO}/actions/workflows/${WORKFLOW_FILE}/runs?per_page=100&created=>=${CUTOFF}" \
   --jq '.workflow_runs | map({
     id: .id,
     status: .status,
