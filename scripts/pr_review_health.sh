@@ -107,6 +107,18 @@ for run_id in $failed_run_ids; do
   } &
 done
 wait
+
+# Surface log-retrieval failures so the operator knows the diagnosis may be incomplete.
+missing_logs=0
+for run_id in $failed_run_ids; do
+  if grep -q "^(log unavailable" "${LOG_DIR}/run_${run_id}.txt" 2>/dev/null; then
+    echo "::warning::Failed run $run_id: log could not be retrieved — diagnosis will be incomplete for this run"
+    missing_logs=$((missing_logs + 1))
+  fi
+done
+if [ "$missing_logs" -gt 0 ]; then
+  echo "  $missing_logs of $failed_runs failed run log(s) could not be retrieved"
+fi
 echo ""
 
 # ---------------------------------------------------------------------------
