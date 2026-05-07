@@ -192,7 +192,7 @@ if [ "$DECISION" = "approve" ]; then
   # Check merge state and rebase if needed.
   # This entire section is best-effort — the review is already posted, so a
   # rebase failure (403 permission, 504 timeout, etc.) must never abort the
-  # batch session. Wrapped in a subshell so set -e doesn't propagate failures.
+  # batch session. Every command uses || to suppress set -e.
   MERGE_STATE=$(gh pr view "$PR_URL" --json mergeStateStatus --jq '.mergeStateStatus' 2>/dev/null || echo "UNKNOWN")
   if [ "$MERGE_STATE" = "BEHIND" ]; then
     OWNER_REPO=$(echo "$PR_URL" | sed -E 's|.*/([^/]+)/([^/]+)/pull/.*|\1/\2|')
@@ -224,15 +224,18 @@ if [ "$DECISION" = "approve" ]; then
         [ "$MERGE_STATE" != "BEHIND" ] && break
         sleep 5
       done
-      if [ "$MERGE_STATE" = "BEHIND" ]; then
-        echo "::warning::still BEHIND after rebase — skipping auto-merge for $PR_URL"
-      fi
+    fi
+
+    if [ "$MERGE_STATE" = "BEHIND" ]; then
+      echo "::warning::still BEHIND after rebase — skipping auto-merge for $PR_URL"
     fi
   fi
 
-  # Enable auto-merge
-  echo "Enabling auto-merge..."
-  gh pr merge "$PR_URL" --auto --squash 2>/dev/null || true
+  # Enable auto-merge (skip if branch is still behind — GitHub would block it anyway)
+  if [ "$MERGE_STATE" != "BEHIND" ]; then
+    echo "Enabling auto-merge..."
+    gh pr merge "$PR_URL" --auto --squash 2>/dev/null || true
+  fi
 
   # Clean up label
   gh pr edit "$PR_URL" --remove-label needs-human-review 2>/dev/null || true
