@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Daily health check for the PR Review Agent workflow (don-petry/pr-review-agent).
+# Daily health check for the PR Review Agent workflow.
 #
 # Fetches recent pr-review.yml run logs, feeds them to Claude for pattern
 # analysis, and writes a markdown report to pr_review_health_report.md.
@@ -16,7 +16,7 @@
 set -euo pipefail
 
 LOOKBACK_DAYS="${LOOKBACK_DAYS:-1}"
-WORKFLOW_REPO="don-petry/pr-review-agent"
+WORKFLOW_REPO="${AGENT_REPO:-petry-projects/.github-private}"
 WORKFLOW_FILE="pr-review.yml"
 REPORT_FILE="pr_review_health_report.md"
 LOG_DIR="health_run_logs"
@@ -30,7 +30,7 @@ echo "  Date:         $TODAY"
 echo ""
 
 # ---------------------------------------------------------------------------
-# 0. Token selection — App token preferred; PAT fallback for don-petry/pr-review-agent
+# 0. Token selection — verify GH_TOKEN has access to workflow run logs
 # ---------------------------------------------------------------------------
 if ! gh api "repos/${WORKFLOW_REPO}/actions/workflows/${WORKFLOW_FILE}/runs?per_page=1" \
      >/dev/null 2>&1; then
