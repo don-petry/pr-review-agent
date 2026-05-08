@@ -1,8 +1,7 @@
 # Global code owner
-* @mnriem
+* @petry-projects/org-leads
 
 # Community catalog files — explicit ownership for when global ownership expands
-/extensions/catalog.community.json @mnriem
-/integrations/catalog.community.json @mnriem
-/presets/catalog.community.json @mnriem
-
+/extensions/catalog.community.json @petry-projects/org-leads
+/integrations/catalog.community.json @petry-projects/org-leads
+/presets/catalog.community.json @petry-projects/org-leads
