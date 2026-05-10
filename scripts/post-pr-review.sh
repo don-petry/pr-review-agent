@@ -285,10 +285,11 @@ COMMENT_END
     # has landed. A new fix-request also invalidates any prior approval.
     mark_prior_agent_items_obsolete "$PR_URL"
   else
-    # Escalate to human
+    # Escalate to human via CODEOWNERS — avoid hard-coding a single reviewer.
     echo "Escalating to human review..."
     gh pr edit "$PR_URL" --add-label needs-human-review 2>/dev/null || true
-    gh pr request-review "$PR_URL" --user "${REVIEWER_USER:-don-petry}" 2>/dev/null || true
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    bash "$SCRIPT_DIR/request-codeowners-review.sh" "$PR_URL" || true
   fi
 fi
 

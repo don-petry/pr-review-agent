@@ -160,11 +160,11 @@ This PR has been through $REVIEW_CYCLE automated review cycles (cap: $MAX_CYCLES
 
 Please take a look manually, or close this PR if it's no longer needed. Once a human review resolves the situation, remove the \`needs-human-review\` label and the cascade can be re-engaged on the next push.
 
-_Posted by the ${BOT_USER:-petry-review-bot} PR-review cascade._
+_Posted by the ${BOT_USER:-don-petry-bot} PR-review cascade._
 ESCALATION_END
     gh pr comment "$PR_URL" --body-file "$ESCALATION_BODY" || echo "    warn: gh pr comment failed — escalation marker not posted; will retry next cycle"
     gh pr edit "$PR_URL" --add-label needs-human-review 2>/dev/null || true
-    gh pr request-review "$PR_URL" --user "${REVIEWER_USER:-don-petry}" 2>/dev/null || true
+    bash "$SCRIPT_DIR/request-codeowners-review.sh" "$PR_URL" || true
     rm -f "$ESCALATION_BODY"
   fi
   echo "{\"pr\":\"$PR_URL\",\"sha\":\"$PR_HEAD_SHA\",\"decision\":\"escalate\",\"reason\":\"max-cycles-reached\"}"

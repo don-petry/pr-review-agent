@@ -43,14 +43,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      REVIEWER_USER: ${{ vars.REVIEWER_USER || 'don-petry' }}
+      # Single bot identity. GH_PAT_WORKFLOWS authenticates as BOT_USER; that
+      # account owns/has-access-to the personal repos scanned by list-prs.sh,
+      # signs the cascade's escalation comments, and is filtered out of the
+      # candidate queue (it can't approve its own PRs). Human reviewers are
+      # routed via CODEOWNERS at escalation time, not pinned via env.
+      BOT_USER: ${{ vars.BOT_USER || 'don-petry-bot' }}
       TARGET_ORG: ${{ vars.TARGET_ORG || 'petry-projects' }}
-      BOT_USER: ${{ vars.BOT_USER || 'petry-review-bot' }}
-      # GitHub identity that GH_PAT_WORKFLOWS authenticates as. Distinct from
-      # REVIEWER_USER (the human reviewer): the agent runs as a bot account
-      # so it can review the human's PRs without hitting the self-approval
-      # block. PRs authored by AGENT_USER are filtered out at enumeration.
-      AGENT_USER: ${{ vars.AGENT_USER || 'don-petry-bot' }}
       AGENT_REPO: ${{ github.repository }}
       # Review engine: "claude" or "copilot". Controls which CLI and models are used.
       # gh variable set REVIEW_ENGINE --body copilot --repo petry-projects/.github-private
