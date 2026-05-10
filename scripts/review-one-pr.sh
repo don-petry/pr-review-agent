@@ -125,7 +125,10 @@ PR_BODIES=$(
 # a second "0", yielding the literal string "0\n0" — which broke the integer
 # comparison at the cycle cap below ("integer expression expected"). Use
 # `|| true` so we keep grep's count and don't add a duplicate.
-REVIEW_CYCLE=$(echo "$PR_BODIES" | grep -cE '<!-- pr-review-agent v1 sha=[a-f0-9]+' || true)
+# `printf '%s\n'` instead of `echo` because PR body content is user-authored
+# and could begin with `-n`/`-e` or contain backslash escapes that some
+# `echo` builtins reinterpret.
+REVIEW_CYCLE=$(printf '%s\n' "$PR_BODIES" | grep -cE '<!-- pr-review-agent v1 sha=[a-f0-9]+' || true)
 REVIEW_CYCLE="${REVIEW_CYCLE:-0}"
 export REVIEW_CYCLE
 MAX_CYCLES="${MAX_REVIEW_CYCLES:-3}"
@@ -135,7 +138,7 @@ echo "    review cycle: $REVIEW_CYCLE (max: $MAX_CYCLES)"
 # merging, stop running the cascade and escalate to a human. We post a single
 # escalation comment marked with `<!-- pr-review-agent escalation -->` so
 # subsequent runs detect the marker and no-op without spamming.
-if echo "$PR_BODIES" | grep -qE '<!-- pr-review-agent escalation -->'; then
+if printf '%s\n' "$PR_BODIES" | grep -qE '<!-- pr-review-agent escalation -->'; then
   echo "    noop: human-escalation marker present — cascade already capped"
   echo "{\"pr\":\"$PR_URL\",\"sha\":\"$PR_HEAD_SHA\",\"decision\":\"noop\",\"reason\":\"human-escalated\"}"
   exit 100

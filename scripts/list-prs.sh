@@ -22,15 +22,31 @@ set -euo pipefail
 # Configurable via environment / repo variables
 REVIEWER_USER="${REVIEWER_USER:-don-petry}"
 TARGET_ORG="${TARGET_ORG:-petry-projects}"
+# AGENT_USER is the GitHub identity the workflow PAT belongs to (typically a
+# bot account, e.g. don-petry-bot). It is distinct from REVIEWER_USER, which
+# is the human who owns the personal repos being scanned and to whom escalations
+# are routed. Self-authored PRs by AGENT_USER are filtered out below.
+AGENT_USER="${AGENT_USER:-don-petry-bot}"
+
+# Reject AGENT_USER values that aren't valid GitHub usernames before
+# interpolating into a jq program. GitHub usernames are 1–39 chars of
+# [A-Za-z0-9-] and may not start or end with a hyphen. Anything else is
+# either a misconfiguration or an injection attempt — fail loud rather
+# than silently dropping PRs.
+if ! [[ "$AGENT_USER" =~ ^[A-Za-z0-9](-?[A-Za-z0-9]){0,38}$ ]]; then
+  echo "::error::AGENT_USER='$AGENT_USER' is not a valid GitHub username" >&2
+  exit 1
+fi
 
 all_prs=""
 
-# Filter: exclude PRs authored by REVIEWER_USER. The workflow token is owned by
-# REVIEWER_USER; GitHub's GraphQL API rejects self-approval unconditionally, so
-# any self-authored PR is unreviewable by this runner and would otherwise burn
-# session capacity (and previously triggered a fatal session abort — see issue
-# #96). Filter at enumeration time so self-authored PRs never enter the queue.
-JQ_NOT_SELF=".[] | select(.author.login != \"$REVIEWER_USER\") | .url"
+# Filter: exclude PRs authored by AGENT_USER. The workflow PAT authenticates
+# as AGENT_USER; GitHub's GraphQL API rejects self-approval unconditionally,
+# so any PR authored by the agent is unreviewable by this runner and would
+# otherwise burn session capacity (and previously triggered a fatal session
+# abort — see issue #96). Filter at enumeration time so self-authored PRs
+# never enter the queue.
+JQ_NOT_SELF=".[] | select(.author.login != \"$AGENT_USER\") | .url"
 
 # Get all repos in personal account and search each
 while IFS= read -r repo; do
