@@ -97,26 +97,30 @@ Repeat **Step 5** for any other repos where the bot should approve PRs:
 
 ## Step 7: Test the Setup
 
-1. Trigger a dry-run to verify authentication:
+1. Trigger a dry-run of the PR-review workflow to verify authentication:
    ```bash
-   gh workflow run fix-stuck-prs.yml --repo petry-projects/.github-private -f dry_run=true
+   gh workflow run pr-review.yml --repo petry-projects/.github-private -f dry_run=true
    ```
 
-2. Check the workflow logs:
+2. Check the workflow logs (substitute the run number from the previous
+   command's output, or list runs with `gh run list --repo petry-projects/.github-private -w pr-review.yml -L 1`):
    ```bash
    gh run view <run-number> --repo petry-projects/.github-private --log
    ```
 
-3. Should show:
+3. The `Install review engine CLIs` step calls `gh auth status` first; it
+   should show:
    ```
-   GH_TOKEN set: yes-masked
-   Authenticated as: donpetry-bot
+   Logged in to github.com account donpetry-bot
+   - Token scopes: 'read:org', 'repo', 'workflow'
    ```
 
-4. If authentication is correct, run the actual fixes:
+4. Once authentication looks correct, flip the org variable to live mode:
    ```bash
-   gh workflow run fix-stuck-prs.yml --repo petry-projects/.github-private -f dry_run=false
+   gh variable set LIVE_MODE --body true --repo petry-projects/.github-private
    ```
+   The next scheduled `:07` cron tick (or a fresh `workflow_dispatch` with
+   `dry_run=false`) will post real approvals.
 
 ## Troubleshooting
 
