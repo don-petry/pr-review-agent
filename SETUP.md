@@ -1,5 +1,13 @@
 # PR Review Agent Setup
 
+> [!WARNING]
+> **This document references a fine-grained PAT (`DON_PETRY_BOT_PETRY_PROJECT_PAT`) that no longer works after the org migration.**
+> Fine-grained PATs fail the GraphQL `addPullRequestReview` mutation with
+> `Resource not accessible by personal access token` even after every obvious
+> requirement is met. Use a **classic PAT** (`DON_PETRY_BOT_GH_PAT`) instead —
+> see [AGENT.md → Setup](AGENT.md#2-create-a-classic-pat-for-the-bot) or
+> [BOT_SETUP.md](BOT_SETUP.md) for the current procedure.
+
 This repository automates PR reviews for the `petry-projects` organization using Claude Code or GitHub Copilot.
 
 ## Quick Start

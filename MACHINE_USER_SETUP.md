@@ -1,5 +1,16 @@
 # Machine User Setup for PR Review Agent
 
+> [!WARNING]
+> **This document is outdated.** It describes a fine-grained PAT setup that
+> was viable when the project lived under `don-petry/pr-review-agent`.
+> After the migration to `petry-projects/.github-private`, fine-grained PATs
+> do not work for this workflow — they fail the GraphQL `addPullRequestReview`
+> mutation with `Resource not accessible by personal access token` even after
+> the org owner approves the token request, fine-grained PATs are allowed for
+> the org, and the bot has Write collaborator access. Use a **classic PAT**
+> instead. See [AGENT.md → Setup](AGENT.md#2-create-a-classic-pat-for-the-bot)
+> or [BOT_SETUP.md](BOT_SETUP.md) for the current procedure.
+
 This project authenticates via a **machine user account** with a fine-grained PAT. This replaces the previous GitHub App approach, which could not satisfy CODEOWNERS approval requirements (see [issue #27](https://github.com/don-petry/pr-review-agent/issues/27)).
 
 ## Why Machine User?

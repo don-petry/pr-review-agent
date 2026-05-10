@@ -129,24 +129,39 @@ authored by `don-petry`; the bot approves them.
    **Invite member** → enter `petry-review-bot` → Role: **Member**.
 6. Accept the invite from the bot account.
 
-### 2. Create a classic PAT for the bot
+### 2. Create a **classic** PAT for the bot
 
-A classic PAT is required — fine-grained PATs cannot satisfy the GitHub
-rulesets bypass that org-admin approval requires.
+> [!IMPORTANT]
+> **Fine-grained PATs do not work for this workflow.** Use a classic PAT only.
+>
+> Fine-grained tokens are blocked by org policy gates: even after the org owner
+> approves the token request and the bot has Write collaborator access, the
+> GraphQL `addPullRequestReview` mutation fails with:
+>
+> ```
+> failed to create review: GraphQL: Resource not accessible by personal access token (addPullRequestReview)
+> ```
+>
+> If you see that error in a workflow run, the secret holds a fine-grained
+> token. Replace it with a classic PAT generated as below. The same gate also
+> blocks the rulesets bypass that branch protections rely on.
 
-1. Sign in as `petry-review-bot`.
+1. Sign in as the bot account (e.g. `donpetry-bot`) — sign out of `don-petry`
+   first, or use a private window. The PAT must be created **from the bot's
+   account**, not yours.
 2. Go to **Settings → Developer settings → Personal access tokens →
    Tokens (classic)** → **Generate new token (classic)**.
 3. Settings:
    - **Note:** `pr-review-agent`
    - **Expiration:** 1 year (set a calendar reminder to rotate)
-   - **Scopes:** ✅ `repo`
+   - **Scopes:** ✅ `repo`, ✅ `workflow`, ✅ `read:org`
 4. Generate and copy the token immediately.
-5. Sign back in as `don-petry` and store the token:
+5. Sign back in as `don-petry` and store the token in the agent repo's secret
+   (the secret name is `DON_PETRY_BOT_GH_PAT` in `petry-projects/.github-private`).
 
-```
-gh secret set GH_PAT --repo don-petry/pr-review-agent
-```
+After saving, trigger a workflow run and confirm the install step's
+`gh auth status` reports the bot's login (not yours) and lists the three
+scopes above.
 
 > **Branch protection / rulesets:** add `petry-review-bot` as an allowed
 > approver on each protected repo. In the repo ruleset or branch protection

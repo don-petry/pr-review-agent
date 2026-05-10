@@ -24,17 +24,36 @@ This guide sets up the bot account that posts PR approvals on behalf of the PR R
 6. Sign in as **petry-review-bot** and accept the invitation
 7. Sign back in as **don-petry**
 
-## Step 3: Create Classic PAT for Bot Account
+## Step 3: Create **Classic** PAT for Bot Account
 
-A classic PAT is required (fine-grained PATs cannot bypass GitHub rulesets).
+> [!IMPORTANT]
+> **Use a classic PAT. Fine-grained PATs do not work.**
+>
+> The agent posts approvals via the GraphQL `addPullRequestReview` mutation.
+> Fine-grained tokens get blocked at the org policy layer even after every
+> obvious requirement is met (org token approval granted, fine-grained PATs
+> allowed for the org, repo access granted, Write collaborator role assigned).
+> The failure is silent until the workflow runs and reports:
+>
+> ```
+> failed to create review: GraphQL: Resource not accessible by personal access token (addPullRequestReview)
+> ```
+>
+> If you see that error after a known-good PAT setup, the secret holds a
+> fine-grained token. Replace it with a classic PAT generated below.
 
-1. Sign in as **petry-review-bot**
+1. Sign in as **the bot account** (e.g. `donpetry-bot`) — sign out of don-petry
+   first, or use a private window. The PAT must be generated **from the bot's
+   account**, not yours.
 2. Go to **Settings → Developer settings → Personal access tokens → Tokens (classic)**
 3. Click **Generate new token (classic)**
 4. Fill in:
    - **Note:** `pr-review-agent`
    - **Expiration:** 1 year (set calendar reminder to rotate)
-   - **Scopes:** Check ✅ `repo` (full control of repositories)
+   - **Scopes:**
+     - ✅ `repo` (full control of repositories) — required for `addPullRequestReview`
+     - ✅ `workflow` — required when AI delegation pushes workflow-file changes
+     - ✅ `read:org` — silences the `Missing required token scopes: 'read:org'` warning and enables team-based CODEOWNERS escalation
 5. Click **Generate token**
 6. **Copy the token immediately** (you won't see it again)
 7. Store it temporarily (we'll add to repo secret next)
