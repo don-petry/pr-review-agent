@@ -16,6 +16,7 @@ Store these in the repository settings (`Settings → Secrets and variables → 
 | Secret | Description | Source |
 |--------|-------------|--------|
 | `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code authentication token | `claude setup-token` |
+| `GOOGLE_API_KEY` | Gemini API authentication token | Google AI Studio / Vertex AI |
 | `DON_PETRY_BOT_PETRY_PROJECT_PAT` | Machine user fine-grained PAT | Generated from machine user account settings |
 | `COPILOT_GITHUB_TOKEN` | GitHub Copilot token (optional, for fallback) | GitHub PAT with Copilot scope |
 
@@ -23,7 +24,7 @@ Store these in the repository settings (`Settings → Secrets and variables → 
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `REVIEW_ENGINE` | `claude` | Primary review engine: `claude` or `copilot` |
+| `REVIEW_ENGINE` | `claude` | Primary review engine: `claude`, `gemini`, or `copilot` |
 | `LIVE_MODE` | `false` | If `true`, reviews are posted live; if `false`, dry-run only |
 | `DELEGATION_ORGS` | Empty | Comma-separated orgs where AI can auto-fix: `petry-projects,don-petry` |
 | `MAX_REVIEW_CYCLES` | `3` | Max review iterations before escalating to human |

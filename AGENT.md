@@ -4,7 +4,7 @@ A scheduled GitHub Action that reviews open PRs on don-petry's behalf.
 Runs hourly, classifies risk, auto-approves low/medium-risk PRs that pass all
 quality gates, and escalates high-risk or gated PRs for human review.
 
-Supports two LLM engines via the `REVIEW_ENGINE` repo variable: **Claude** (default)
+Supports three LLM engines via the `REVIEW_ENGINE` repo variable: **Claude** (default), **Gemini**,
 and **Copilot**.
 
 ## How it works
@@ -55,14 +55,14 @@ and **Copilot**.
 
    ### Engine model mapping
 
-   | Tier | Claude primary | Copilot primary |
-   |---|---|---|
-   | Triage | Haiku 4.5 | GPT-5-mini |
-   | Deep review | Sonnet 4.6 | GPT-5.2 |
-   | Rubber duck | GPT-5.4 (cross) | Sonnet 4.6 (cross) |
-   | Synthesis | Sonnet 4.6 | GPT-5.2 |
-   | Security audit | Opus 4.6 | GPT-5.4 |
-   | Action / single review | Sonnet 4.6 / Opus 4.6 | GPT-5.2 / GPT-5.4 |
+   | Tier | Claude primary | Gemini primary | Copilot primary |
+   |---|---|---|---|
+   | Triage | Haiku 4.5 | Gemini 2.0 Flash | GPT-5-mini |
+   | Deep review | Sonnet 4.6 | Gemini 1.5 Pro | GPT-5.2 |
+   | Rubber duck | GPT-5.4 (cross) | Sonnet 4.6 (cross) | Sonnet 4.6 (cross) |
+   | Synthesis | Sonnet 4.6 | Gemini 1.5 Pro | GPT-5.2 |
+   | Security audit | Opus 4.6 | Gemini 1.5 Pro | GPT-5.4 |
+   | Action / single review | Sonnet 4.6 / Opus 4.6 | Gemini 1.5 Pro | GPT-5.2 / GPT-5.4 |
 
    **Cost profile:**
    - ~80% of PRs: triage + single confirm (2 calls, ~30s)
@@ -168,6 +168,14 @@ Store as a repo secret:
 gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo don-petry/pr-review-agent
 ```
 
+#### Gemini engine
+
+Requires a Google API Key. Store as a repo secret:
+
+```
+gh secret set GOOGLE_API_KEY --repo don-petry/pr-review-agent
+```
+
 #### Copilot engine
 
 Create a GitHub PAT with Copilot scope. Store as a repo secret:
@@ -179,6 +187,9 @@ gh secret set COPILOT_GITHUB_TOKEN --repo don-petry/pr-review-agent
 ### 4. Choose your engine
 
 ```
+# Use Gemini:
+gh variable set REVIEW_ENGINE --body gemini --repo don-petry/pr-review-agent
+
 # Use Copilot (GPT models):
 gh variable set REVIEW_ENGINE --body copilot --repo don-petry/pr-review-agent
 
@@ -225,7 +236,7 @@ gh workflow run pr-review.yml --repo don-petry/pr-review-agent -f dry_run=false
 
 ## Tuning
 
-- **Review engine** — `REVIEW_ENGINE` repo variable: `claude` (default) or
+- **Review engine** — `REVIEW_ENGINE` repo variable: `claude` (default), `gemini`, or
   `copilot`. Controls which CLI and model family is used.
 - **Risk rules** — edit `prompts/shared.md` (taxonomy), or the per-tier
   prompts (`prompts/deep-review.md`, `prompts/security-audit.md`).

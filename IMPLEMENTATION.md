@@ -166,13 +166,19 @@ The `pr-review.yml` workflow includes fallback logic:
 
 ```bash
 if [ "$rc" -eq 2 ] && [ "${REVIEW_ENGINE:-claude}" = "claude" ]; then
-  echo "Claude rate limit hit — switching to Copilot engine for remaining PRs"
+  echo "Claude rate limit hit — switching to Gemini engine for remaining PRs"
+  export REVIEW_ENGINE=gemini
+  bash scripts/review-one-pr.sh "$pr_url" || rc=$?
+fi
+
+if [ "$rc" -eq 2 ] && [ "${REVIEW_ENGINE}" = "gemini" ]; then
+  echo "Gemini rate limit hit — switching to Copilot engine for remaining PRs"
   export REVIEW_ENGINE=copilot
   bash scripts/review-one-pr.sh "$pr_url" || rc=$?
 fi
 ```
 
-If Claude hits rate limits, the workflow switches to GitHub Copilot for remaining PRs in the batch. This ensures reviews continue even under high load.
+If Claude hits rate limits, the workflow switches to Gemini, and then to GitHub Copilot if needed. This ensures reviews continue even under high load.
 
 ## Metrics and Monitoring
 
@@ -198,7 +204,7 @@ gh run view <run-id> --repo don-petry/pr-review-agent --log
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `REVIEW_ENGINE` | `claude` | Primary review engine |
+| `REVIEW_ENGINE` | `claude` | Primary review engine: `claude`, `gemini`, or `copilot` |
 | `DRY_RUN` | `true` | If true, don't post reviews |
 | `MAX_PRS` | `10` | Max reviews per run |
 | `CANDIDATE_LIMIT` | `100` | Max candidates scanned |
@@ -210,6 +216,7 @@ gh run view <run-id> --repo don-petry/pr-review-agent --log
 | Secret | Purpose |
 |--------|---------|
 | `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code authentication |
+| `GOOGLE_API_KEY` | Gemini API authentication |
 | `DON_PETRY_BOT_PETRY_PROJECT_PAT` | Machine user PAT for GitHub API access |
 | `COPILOT_GITHUB_TOKEN` | GitHub Copilot fallback token |
 
