@@ -53,16 +53,24 @@ while IFS= read -r pr_url; do
   rc=0
   bash scripts/review-one-pr.sh "$pr_url" || rc=$?
 
-  # Exit code 2 = engine rate-limited. Switch from claude to copilot once,
-  # then retry this PR. All later PRs in the batch use copilot too.
+  # Exit code 2 = engine rate-limited.
+  # Fallback chain: claude -> gemini -> copilot
   if [ "$rc" -eq 2 ] && [ "${REVIEW_ENGINE:-claude}" = "claude" ]; then
-    if ! gh extension list 2>/dev/null | grep -q copilot; then
-      echo "::warning::Copilot fallback engine unavailable (not installed) — skipping $pr_url and continuing batch"
+    echo "::warning::Claude rate limit hit — switching to Gemini engine for remaining PRs"
+    export REVIEW_ENGINE=gemini
+    engine_fallbacks=$((engine_fallbacks + 1))
+    rc=0
+    bash scripts/review-one-pr.sh "$pr_url" || rc=$?
+  fi
+
+  if [ "$rc" -eq 2 ] && [ "${REVIEW_ENGINE}" = "gemini" ]; then
+    if ! gh extension list 2>/dev/null | grep -q copilot && ! gh copilot --version > /dev/null 2>&1; then
+      echo "::warning::Copilot fallback engine unavailable — skipping $pr_url and continuing batch"
       failed=$((failed + 1))
       echo "::endgroup::"
       continue
     fi
-    echo "::warning::Claude rate limit hit — switching to Copilot engine for remaining PRs"
+    echo "::warning::Gemini rate limit hit — switching to Copilot engine for remaining PRs"
     export REVIEW_ENGINE=copilot
     engine_fallbacks=$((engine_fallbacks + 1))
     rc=0
