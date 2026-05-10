@@ -58,23 +58,23 @@ This guide sets up the bot account that posts PR approvals on behalf of the PR R
 6. **Copy the token immediately** (you won't see it again)
 7. Store it temporarily (we'll add to repo secret next)
 
-## Step 4: Add GH_PAT Secret to Repo
+## Step 4: Add DON_PETRY_BOT_GH_PAT Secret to Repo
 
 1. Sign back in as **don-petry**
-2. Go to https://github.com/don-petry/pr-review-agent/settings/secrets/actions
+2. Go to https://github.com/petry-projects/.github-private/settings/secrets/actions
 3. Click **New repository secret**
 4. Fill in:
-   - **Name:** `GH_PAT`
+   - **Name:** `DON_PETRY_BOT_GH_PAT`
    - **Value:** Paste the bot token from Step 3
 5. Click **Add secret**
 
-**Verify:** The secret should now appear in the list as `GH_PAT`
+**Verify:** The secret should now appear in the list as `DON_PETRY_BOT_GH_PAT`
 
 ## Step 5: Add Bot to Branch Protection Rules
 
 The bot needs to be allowed as an approver in branch protection settings.
 
-1. Go to https://github.com/don-petry/pr-review-agent/settings/branches
+1. Go to https://github.com/petry-projects/.github-private/settings/branches
 2. Click on the `main` branch protection rule (or create one)
 3. In "Require pull request reviews before merging":
    - Make sure the bot is **NOT** in the "Dismiss stale pull request approvals" dismissal restrictions
@@ -82,7 +82,7 @@ The bot needs to be allowed as an approver in branch protection settings.
 4. Save
 
 **Alternative:** If using GitHub Rulesets instead of branch protection:
-1. Go to https://github.com/don-petry/pr-review-agent/rules
+1. Go to https://github.com/petry-projects/.github-private/rules
 2. Edit the main branch ruleset
 3. Under "Require reviews," ensure `donpetry-bot` can post approvals
 4. Save
@@ -99,12 +99,12 @@ Repeat **Step 5** for any other repos where the bot should approve PRs:
 
 1. Trigger a dry-run to verify authentication:
    ```bash
-   gh workflow run fix-stuck-prs.yml --repo don-petry/pr-review-agent -f dry_run=true
+   gh workflow run fix-stuck-prs.yml --repo petry-projects/.github-private -f dry_run=true
    ```
 
 2. Check the workflow logs:
    ```bash
-   gh run view <run-number> --repo don-petry/pr-review-agent --log
+   gh run view <run-number> --repo petry-projects/.github-private --log
    ```
 
 3. Should show:
@@ -115,13 +115,13 @@ Repeat **Step 5** for any other repos where the bot should approve PRs:
 
 4. If authentication is correct, run the actual fixes:
    ```bash
-   gh workflow run fix-stuck-prs.yml --repo don-petry/pr-review-agent -f dry_run=false
+   gh workflow run fix-stuck-prs.yml --repo petry-projects/.github-private -f dry_run=false
    ```
 
 ## Troubleshooting
 
 ### Issue: Still authenticating as `don-petry`
-- Verify `GH_PAT` secret contains the **bot account's** PAT, not don-petry's token
+- Verify `DON_PETRY_BOT_GH_PAT` secret contains the **bot account's** PAT, not don-petry's token
 - Check the PAT was generated from donpetry-bot's account, not don-petry's
 
 ### Issue: "Review Can not approve your own pull request"
@@ -138,13 +138,13 @@ Repeat **Step 5** for any other repos where the bot should approve PRs:
 1. Sign in as **donpetry-bot**
 2. Go to **Settings → Developer settings → Tokens (classic)**
 3. Generate a new token with same settings
-4. Update the `GH_PAT` secret in the repo with the new token
+4. Update the `DON_PETRY_BOT_GH_PAT` secret in the repo with the new token
 5. Delete the old token
 6. Set a new calendar reminder for next year
 
 ## Security Notes
 
-- The `GH_PAT` is a secret and should never be logged or committed
+- The `DON_PETRY_BOT_GH_PAT` is a secret and should never be logged or committed
 - The bot account should only be used for automated reviews, not manual work
 - Rotate the token annually
 - If the token is compromised, delete it immediately and generate a new one

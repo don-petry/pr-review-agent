@@ -107,14 +107,14 @@ and **Copilot**.
 
 ### Reviewer identity
 
-The agent posts PR reviews and approvals using the `GH_PAT` secret. This
+The agent posts PR reviews and approvals using the `DON_PETRY_BOT_GH_PAT` secret. This
 token **must belong to a different GitHub account than the PR author** —
 GitHub blocks self-approval (a user cannot approve their own PR). If the
 same account both opens PRs (via Claude automation) and tries to approve
 them, every approval will silently fail.
 
 The recommended pattern: create a dedicated **reviewer bot account**
-(e.g. `donpetry-bot`) whose token is stored as `GH_PAT`. PRs are
+(e.g. `donpetry-bot`) whose token is stored as `DON_PETRY_BOT_GH_PAT`. PRs are
 authored by `don-petry`; the bot approves them.
 
 ### 1. Create the reviewer bot account
@@ -180,7 +180,7 @@ claude setup-token
 Store as a repo secret:
 
 ```
-gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo don-petry/pr-review-agent
+gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo petry-projects/.github-private
 ```
 
 #### Copilot engine
@@ -188,30 +188,30 @@ gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo don-petry/pr-review-agent
 Create a GitHub PAT with Copilot scope. Store as a repo secret:
 
 ```
-gh secret set COPILOT_GITHUB_TOKEN --repo don-petry/pr-review-agent
+gh secret set COPILOT_GITHUB_TOKEN --repo petry-projects/.github-private
 ```
 
 ### 4. Choose your engine
 
 ```
 # Use Copilot (GPT models):
-gh variable set REVIEW_ENGINE --body copilot --repo don-petry/pr-review-agent
+gh variable set REVIEW_ENGINE --body copilot --repo petry-projects/.github-private
 
 # Use Claude (default — no variable needed, or set explicitly):
-gh variable set REVIEW_ENGINE --body claude --repo don-petry/pr-review-agent
+gh variable set REVIEW_ENGINE --body claude --repo petry-projects/.github-private
 ```
 
 ### 5. Test with a dry run
 
 ```
-gh workflow run pr-review.yml --repo don-petry/pr-review-agent -f dry_run=true
-gh run watch --repo don-petry/pr-review-agent
+gh workflow run pr-review.yml --repo petry-projects/.github-private -f dry_run=true
+gh run watch --repo petry-projects/.github-private
 ```
 
 To review a single PR ad-hoc:
 
 ```
-gh workflow run pr-review.yml --repo don-petry/pr-review-agent \
+gh workflow run pr-review.yml --repo petry-projects/.github-private \
   -f pr_url=https://github.com/owner/repo/pull/123 \
   -f dry_run=true
 ```
@@ -223,19 +223,19 @@ but never posts reviews, comments, labels, or reviewer requests. To enable
 live mode:
 
 ```
-gh variable set LIVE_MODE --body true --repo don-petry/pr-review-agent
+gh variable set LIVE_MODE --body true --repo petry-projects/.github-private
 ```
 
 To go back to dry-run:
 
 ```
-gh variable delete LIVE_MODE --repo don-petry/pr-review-agent
+gh variable delete LIVE_MODE --repo petry-projects/.github-private
 ```
 
 A specific run can always be forced either way via the `dry_run` workflow input:
 
 ```
-gh workflow run pr-review.yml --repo don-petry/pr-review-agent -f dry_run=false
+gh workflow run pr-review.yml --repo petry-projects/.github-private -f dry_run=false
 ```
 
 ## Tuning
@@ -249,15 +249,15 @@ gh workflow run pr-review.yml --repo don-petry/pr-review-agent -f dry_run=false
   PRs from a specific org, or to exclude certain repos).
 - **AI delegation** — set `DELEGATION_ORGS` to a comma-separated list of
   GitHub orgs where AI-assisted fix delegation is enabled:
-  `gh variable set DELEGATION_ORGS --body "petry-projects,don-petry" --repo don-petry/pr-review-agent`
+  `gh variable set DELEGATION_ORGS --body "petry-projects,don-petry" --repo petry-projects/.github-private`
 - **Max review cycles** — how many times the agent delegates to AI before
   escalating to human (default 3):
-  `gh variable set MAX_REVIEW_CYCLES --body 5 --repo don-petry/pr-review-agent`
+  `gh variable set MAX_REVIEW_CYCLES --body 5 --repo petry-projects/.github-private`
 - **Models** — change model IDs in `scripts/engine.sh`. The cascade tiers
   map to: triage → deep → audit → action.
 - **Max PRs per run** — defaults to 10 per cron tick to stay within the 60-min
   job timeout. Override:
-  `gh variable set MAX_PRS --body 15 --repo don-petry/pr-review-agent`
+  `gh variable set MAX_PRS --body 15 --repo petry-projects/.github-private`
 
 ## Mention-triggered reviews
 
@@ -273,7 +273,7 @@ PR comment "@donpetry-bot please review"
       → validates commenter trust (OWNER/MEMBER/COLLABORATOR only)
       → posts ack comment "I'm on it..."
       → gh workflow run pr-review.yml --field pr_url=<url> --field force_review=true
-          → don-petry/pr-review-agent: pr-review.yml (per-PR concurrency slot)
+          → petry-projects/.github-private: pr-review.yml (per-PR concurrency slot)
               → scripts/review-one-pr.sh (FORCE_REVIEW=true bypasses idempotency)
                   → cascade as normal → posts review
 ```
@@ -290,14 +290,12 @@ PR comment "@donpetry-bot please review"
 1. Copy [`templates/mention-listener.yml`](templates/mention-listener.yml) to
    `petry-projects/.github` as `.github/workflows/pr-review-mention.yml`.
 
-2. Add the `DON_PETRY_BOT_PETRY_PROJECT_PAT` secret to `petry-projects/.github`
-   (org-level secret or repo secret on `.github`). The PAT needs:
-   - **Pull requests: write** — to post the ack comment across petry-projects repos
-   - **Contents: write** (scoped to `don-petry/pr-review-agent`) — to send the
-     `repository_dispatch` event (does **not** require `Actions: write`)
+2. Add the `DON_PETRY_BOT_GH_PAT` secret to `petry-projects/.github`
+   (org-level secret or repo secret on `.github`). Use a classic PAT from
+   `donpetry-bot` with scopes: ✅ `repo`, ✅ `workflow`, ✅ `read:org`
 
 3. Ensure `donpetry-bot` has at least **Read** collaborator access on
-   `don-petry/pr-review-agent`.
+   `petry-projects/.github-private`.
 
 ## Architecture
 

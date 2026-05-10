@@ -1,13 +1,5 @@
 # PR Review Agent Setup
 
-> [!WARNING]
-> **This document references a fine-grained PAT (`DON_PETRY_BOT_PETRY_PROJECT_PAT`) that no longer works after the org migration.**
-> Fine-grained PATs fail the GraphQL `addPullRequestReview` mutation with
-> `Resource not accessible by personal access token` even after every obvious
-> requirement is met. Use a **classic PAT** (`DON_PETRY_BOT_GH_PAT`) instead —
-> see [AGENT.md → Setup](AGENT.md#2-create-a-classic-pat-for-the-bot) or
-> [BOT_SETUP.md](BOT_SETUP.md) for the current procedure.
-
 This repository automates PR reviews for the `petry-projects` organization using Claude Code or GitHub Copilot.
 
 ## Quick Start
@@ -24,7 +16,7 @@ Store these in the repository settings (`Settings → Secrets and variables → 
 | Secret | Description | Source |
 |--------|-------------|--------|
 | `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code authentication token | `claude setup-token` |
-| `DON_PETRY_BOT_PETRY_PROJECT_PAT` | Machine user fine-grained PAT | Generated from machine user account settings |
+| `DON_PETRY_BOT_GH_PAT` | Machine user classic PAT | Generated from `donpetry-bot` account settings — see [BOT_SETUP.md](BOT_SETUP.md) |
 | `COPILOT_GITHUB_TOKEN` | GitHub Copilot token (optional, for fallback) | GitHub PAT with Copilot scope |
 
 ### Repository Variables (Optional)
@@ -68,14 +60,14 @@ When the agent approves a PR:
 ### Dry-run (test without posting)
 ```bash
 gh workflow run pr-review.yml \
-  --repo don-petry/pr-review-agent \
+  --repo petry-projects/.github-private \
   -f dry_run=true
 ```
 
 ### Review a specific PR
 ```bash
 gh workflow run pr-review.yml \
-  --repo don-petry/pr-review-agent \
+  --repo petry-projects/.github-private \
   -f pr_url=https://github.com/petry-projects/ContentTwin/pull/123 \
   -f dry_run=false
 ```
@@ -84,7 +76,7 @@ gh workflow run pr-review.yml \
 If PRs have agent comments but no approval reviews (from an older bug), use:
 ```bash
 gh workflow run fix-stuck-prs.yml \
-  --repo don-petry/pr-review-agent \
+  --repo petry-projects/.github-private \
   -f dry_run=true
 ```
 
@@ -96,15 +88,15 @@ The `pr-review.yml` workflow runs hourly at `:07` to avoid the top-of-hour cron 
 
 To check recent runs:
 ```bash
-gh run list --repo don-petry/pr-review-agent -w pr-review.yml -L 5
+gh run list --repo petry-projects/.github-private -w pr-review.yml -L 5
 ```
 
 ## Troubleshooting
 
 ### Workflow fails: "Resource not accessible by integration"
-- Verify the `DON_PETRY_BOT_PETRY_PROJECT_PAT` secret is set and the token hasn't expired
-- Check the machine user has access to the target repos
-- Ensure the PAT has the required scopes (Contents: read, Pull requests: read/write, Checks: read)
+- Verify the `DON_PETRY_BOT_GH_PAT` secret is set and the token hasn't expired
+- Check the machine user (`donpetry-bot`) has access to the target repos
+- Ensure the classic PAT has the required scopes: `repo`, `workflow`, `read:org`
 
 ### Reviews not posting
 - Run a dry-run to verify agent decision
@@ -118,7 +110,7 @@ gh run list --repo don-petry/pr-review-agent -w pr-review.yml -L 5
 
 ## Machine User Details
 
-The bot authenticates as a machine user account with a fine-grained PAT stored as the `DON_PETRY_BOT_PETRY_PROJECT_PAT` secret. The machine user is added to an org team listed in CODEOWNERS, so its approvals satisfy code owner review requirements.
+The bot (`donpetry-bot`) authenticates as a machine user account with a classic PAT stored as the `DON_PETRY_BOT_GH_PAT` secret. The machine user is added to an org team listed in CODEOWNERS, so its approvals satisfy code owner review requirements.
 
 For full setup instructions, see [MACHINE_USER_SETUP.md](MACHINE_USER_SETUP.md).
 
@@ -145,10 +137,10 @@ prompts/
 
 ## Security Considerations
 
-- **Fine-grained PAT** scoped to only the permissions needed (Contents: read, Pull requests: read/write, Checks: read)
-- **90-day expiry** on PAT — set a calendar reminder to rotate
+- **Classic PAT** with minimum required scopes: `repo`, `workflow`, `read:org`
+- **1-year expiry** on PAT — set a calendar reminder to rotate
 - **PAT** stored only in GitHub Secrets, never logged or committed
-- **Rotation** — generate a new PAT, update `DON_PETRY_BOT_PETRY_PROJECT_PAT` secret, revoke old token
+- **Rotation** — generate a new classic PAT from `donpetry-bot`, update `DON_PETRY_BOT_GH_PAT` secret, revoke old token
 
 ## Related Documentation
 
