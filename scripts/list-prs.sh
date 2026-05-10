@@ -25,6 +25,13 @@ TARGET_ORG="${TARGET_ORG:-petry-projects}"
 
 all_prs=""
 
+# Filter: exclude PRs authored by REVIEWER_USER. The workflow token is owned by
+# REVIEWER_USER; GitHub's GraphQL API rejects self-approval unconditionally, so
+# any self-authored PR is unreviewable by this runner and would otherwise burn
+# session capacity (and previously triggered a fatal session abort — see issue
+# #96). Filter at enumeration time so self-authored PRs never enter the queue.
+JQ_NOT_SELF=".[] | select(.author.login != \"$REVIEWER_USER\") | .url"
+
 # Get all repos in personal account and search each
 while IFS= read -r repo; do
   prs=$(gh search prs \
@@ -32,8 +39,8 @@ while IFS= read -r repo; do
     --repo "$repo" \
     --draft=false \
     --limit 100 \
-    --json url \
-    --jq '.[].url' 2>/dev/null || true)
+    --json url,author \
+    --jq "$JQ_NOT_SELF" 2>/dev/null || true)
   all_prs="${all_prs}${prs}"$'\n'
 done < <(gh repo list "$REVIEWER_USER" --json nameWithOwner --jq '.[].nameWithOwner' 2>/dev/null || true)
 
@@ -45,8 +52,8 @@ while IFS= read -r repo; do
     --draft=false \
     --checks success \
     --limit 100 \
-    --json url \
-    --jq '.[].url' 2>/dev/null || true)
+    --json url,author \
+    --jq "$JQ_NOT_SELF" 2>/dev/null || true)
   all_prs="${all_prs}${prs}"$'\n'
 done < <(gh repo list "$TARGET_ORG" --json nameWithOwner --jq '.[].nameWithOwner' 2>/dev/null || true)
 

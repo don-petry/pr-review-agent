@@ -119,7 +119,14 @@ PR_BODIES=$(
   gh pr view "$PR_URL" --json reviews,comments \
     --jq '((.reviews // []) + (.comments // [])) | .[].body | select(. != null)' 2>/dev/null || true
 )
-REVIEW_CYCLE=$(echo "$PR_BODIES" | grep -cE '<!-- pr-review-agent v1 sha=[a-f0-9]+' || echo 0)
+# grep -c always prints a count line (including "0" for no matches) and exits 1
+# when there are no matches. Under `set -o pipefail`, a non-zero exit in the
+# pipe causes the substitution to fail; the previous `|| echo 0` then appended
+# a second "0", yielding the literal string "0\n0" — which broke the integer
+# comparison at the cycle cap below ("integer expression expected"). Use
+# `|| true` so we keep grep's count and don't add a duplicate.
+REVIEW_CYCLE=$(echo "$PR_BODIES" | grep -cE '<!-- pr-review-agent v1 sha=[a-f0-9]+' || true)
+REVIEW_CYCLE="${REVIEW_CYCLE:-0}"
 export REVIEW_CYCLE
 MAX_CYCLES="${MAX_REVIEW_CYCLES:-3}"
 echo "    review cycle: $REVIEW_CYCLE (max: $MAX_CYCLES)"
