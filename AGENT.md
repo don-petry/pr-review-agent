@@ -16,7 +16,7 @@ and **Copilot**.
 2. **Enumerate** — `scripts/list-prs.sh` queries GitHub for open PRs across
    every repo the PAT can see (the bot's personal account plus `TARGET_ORG`),
    **excluding PRs authored by `BOT_USER`** (the workflow's authenticated
-   identity, default `don-petry-bot`). GitHub's GraphQL API rejects
+   identity, default `donpetry-bot`). GitHub's GraphQL API rejects
    self-approval unconditionally, so self-authored PRs are unreviewable and
    would otherwise starve the queue. Output: one URL per line.
 3. **Per-PR review** — `scripts/review-one-pr.sh` runs a cascading review

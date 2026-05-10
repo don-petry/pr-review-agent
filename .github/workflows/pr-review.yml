@@ -50,7 +50,7 @@ jobs:
       # signs the cascade's escalation comments, and is filtered out of the
       # candidate queue (it can't approve its own PRs). Human reviewers are
       # routed via CODEOWNERS at escalation time, not pinned via env.
-      BOT_USER: ${{ vars.BOT_USER || 'don-petry-bot' }}
+      BOT_USER: ${{ vars.BOT_USER || 'donpetry-bot' }}
       TARGET_ORG: ${{ vars.TARGET_ORG || 'petry-projects' }}
       AGENT_REPO: ${{ github.repository }}
       # Review engine: "claude" or "copilot". Controls which CLI and models are used.
