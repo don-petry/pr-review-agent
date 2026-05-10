@@ -119,7 +119,17 @@ PR_BODIES=$(
   gh pr view "$PR_URL" --json reviews,comments \
     --jq '((.reviews // []) + (.comments // [])) | .[].body | select(. != null)' 2>/dev/null || true
 )
-REVIEW_CYCLE=$(echo "$PR_BODIES" | grep -cE '<!-- pr-review-agent v1 sha=[a-f0-9]+' || echo 0)
+# grep -c always prints a count line (including "0" for no matches) and exits 1
+# when there are no matches. Under `set -o pipefail`, a non-zero exit in the
+# pipe causes the substitution to fail; the previous `|| echo 0` then appended
+# a second "0", yielding the literal string "0\n0" — which broke the integer
+# comparison at the cycle cap below ("integer expression expected"). Use
+# `|| true` so we keep grep's count and don't add a duplicate.
+# `printf '%s\n'` instead of `echo` because PR body content is user-authored
+# and could begin with `-n`/`-e` or contain backslash escapes that some
+# `echo` builtins reinterpret.
+REVIEW_CYCLE=$(printf '%s\n' "$PR_BODIES" | grep -cE '<!-- pr-review-agent v1 sha=[a-f0-9]+' || true)
+REVIEW_CYCLE="${REVIEW_CYCLE:-0}"
 export REVIEW_CYCLE
 MAX_CYCLES="${MAX_REVIEW_CYCLES:-3}"
 echo "    review cycle: $REVIEW_CYCLE (max: $MAX_CYCLES)"
@@ -128,7 +138,7 @@ echo "    review cycle: $REVIEW_CYCLE (max: $MAX_CYCLES)"
 # merging, stop running the cascade and escalate to a human. We post a single
 # escalation comment marked with `<!-- pr-review-agent escalation -->` so
 # subsequent runs detect the marker and no-op without spamming.
-if echo "$PR_BODIES" | grep -qE '<!-- pr-review-agent escalation -->'; then
+if printf '%s\n' "$PR_BODIES" | grep -qE '<!-- pr-review-agent escalation -->'; then
   echo "    noop: human-escalation marker present — cascade already capped"
   echo "{\"pr\":\"$PR_URL\",\"sha\":\"$PR_HEAD_SHA\",\"decision\":\"noop\",\"reason\":\"human-escalated\"}"
   exit 100
@@ -150,11 +160,11 @@ This PR has been through $REVIEW_CYCLE automated review cycles (cap: $MAX_CYCLES
 
 Please take a look manually, or close this PR if it's no longer needed. Once a human review resolves the situation, remove the \`needs-human-review\` label and the cascade can be re-engaged on the next push.
 
-_Posted by the ${BOT_USER:-petry-review-bot} PR-review cascade._
+_Posted by the ${BOT_USER:-don-petry-bot} PR-review cascade._
 ESCALATION_END
     gh pr comment "$PR_URL" --body-file "$ESCALATION_BODY" || echo "    warn: gh pr comment failed — escalation marker not posted; will retry next cycle"
     gh pr edit "$PR_URL" --add-label needs-human-review 2>/dev/null || true
-    gh pr request-review "$PR_URL" --user "${REVIEWER_USER:-don-petry}" 2>/dev/null || true
+    bash "$SCRIPT_DIR/request-codeowners-review.sh" "$PR_URL" || true
     rm -f "$ESCALATION_BODY"
   fi
   echo "{\"pr\":\"$PR_URL\",\"sha\":\"$PR_HEAD_SHA\",\"decision\":\"escalate\",\"reason\":\"max-cycles-reached\"}"

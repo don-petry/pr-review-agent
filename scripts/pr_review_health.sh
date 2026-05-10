@@ -39,7 +39,7 @@ if ! gh api "repos/${WORKFLOW_REPO}/actions/workflows/${WORKFLOW_FILE}/runs?per_
     export GH_TOKEN="$GH_PAT_FALLBACK"
   else
     echo "::error::App token cannot access ${WORKFLOW_REPO} run logs and GH_PAT_FALLBACK is not set."
-    echo "::error::Grant the GitHub App access to ${WORKFLOW_REPO} or set the GH_PAT_WORKFLOWS secret."
+    echo "::error::Grant the GitHub App access to ${WORKFLOW_REPO} or set the DON_PETRY_BOT_GH_PAT secret."
     exit 1
   fi
 fi
