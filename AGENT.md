@@ -11,7 +11,7 @@ and **Copilot**.
 
 1. **Cron** — `.github/workflows/pr-review.yml` runs at `:07` every hour
    (and on `workflow_dispatch`).
-1a. **@mention** — comment `@petry-review-bot` on any PR to trigger an immediate
+1a. **@mention** — comment `@donpetry-bot` on any PR to trigger an immediate
     review, bypassing the hourly schedule. See [Mention-triggered reviews](#mention-triggered-reviews).
 2. **Enumerate** — `scripts/list-prs.sh` queries GitHub for open PRs across
    every repo the PAT can see (the bot's personal account plus `TARGET_ORG`),
@@ -114,19 +114,19 @@ same account both opens PRs (via Claude automation) and tries to approve
 them, every approval will silently fail.
 
 The recommended pattern: create a dedicated **reviewer bot account**
-(e.g. `petry-review-bot`) whose token is stored as `GH_PAT`. PRs are
+(e.g. `donpetry-bot`) whose token is stored as `GH_PAT`. PRs are
 authored by `don-petry`; the bot approves them.
 
 ### 1. Create the reviewer bot account
 
 1. Sign out of GitHub (or use a private browser window).
 2. Go to <https://github.com/signup> and create a new account.
-   - **Username:** e.g. `petry-review-bot`
-   - **Email:** a dedicated alias works well (e.g. `you+petry-review-bot@gmail.com`)
+   - **Username:** e.g. `donpetry-bot`
+   - **Email:** a dedicated alias works well (e.g. `you+donpetry-bot@gmail.com`)
 3. Verify the email address.
 4. Sign back in as `don-petry`.
 5. Go to **github.com/organizations/petry-projects/settings/members** →
-   **Invite member** → enter `petry-review-bot` → Role: **Member**.
+   **Invite member** → enter `donpetry-bot` → Role: **Member**.
 6. Accept the invite from the bot account.
 
 ### 2. Create a **classic** PAT for the bot
@@ -163,7 +163,7 @@ After saving, trigger a workflow run and confirm the install step's
 `gh auth status` reports the bot's login (not yours) and lists the three
 scopes above.
 
-> **Branch protection / rulesets:** add `petry-review-bot` as an allowed
+> **Branch protection / rulesets:** add `donpetry-bot` as an allowed
 > approver on each protected repo. In the repo ruleset or branch protection
 > settings, ensure the bot is not excluded from the reviewer pool.
 
@@ -261,14 +261,14 @@ gh workflow run pr-review.yml --repo don-petry/pr-review-agent -f dry_run=false
 
 ## Mention-triggered reviews
 
-Comment `@petry-review-bot` on any PR to start an immediate, on-demand review
+Comment `@donpetry-bot` on any PR to start an immediate, on-demand review
 without waiting for the next scheduled run. The bot posts an acknowledgement
 within seconds and the full cascade result appears in a few minutes.
 
 **How it flows:**
 
 ```
-PR comment "@petry-review-bot please review"
+PR comment "@donpetry-bot please review"
   → petry-projects/.github: pr-review-mention.yml (listens org-wide)
       → validates commenter trust (OWNER/MEMBER/COLLABORATOR only)
       → posts ack comment "I'm on it..."
@@ -296,7 +296,7 @@ PR comment "@petry-review-bot please review"
    - **Contents: write** (scoped to `don-petry/pr-review-agent`) — to send the
      `repository_dispatch` event (does **not** require `Actions: write`)
 
-3. Ensure `petry-review-bot` has at least **Read** collaborator access on
+3. Ensure `donpetry-bot` has at least **Read** collaborator access on
    `don-petry/pr-review-agent`.
 
 ## Architecture

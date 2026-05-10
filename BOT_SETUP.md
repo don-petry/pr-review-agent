@@ -1,4 +1,4 @@
-# petry-review-bot Setup Instructions
+# donpetry-bot Setup Instructions
 
 This guide sets up the bot account that posts PR approvals on behalf of the PR Review Agent.
 
@@ -9,8 +9,8 @@ This guide sets up the bot account that posts PR approvals on behalf of the PR R
 1. Sign out of GitHub (use private browser window or different browser)
 2. Go to https://github.com/signup
 3. Create account with:
-   - **Username:** `petry-review-bot`
-   - **Email:** Use a dedicated alias (e.g., `you+petry-review-bot@gmail.com`)
+   - **Username:** `donpetry-bot`
+   - **Email:** Use a dedicated alias (e.g., `you+donpetry-bot@gmail.com`)
 4. Verify the email address
 5. Sign back in as **don-petry**
 
@@ -18,10 +18,10 @@ This guide sets up the bot account that posts PR approvals on behalf of the PR R
 
 1. Go to https://github.com/organizations/petry-projects/settings/members
 2. Click **Invite member**
-3. Enter `petry-review-bot`
+3. Enter `donpetry-bot`
 4. Select Role: **Member**
 5. Send invitation
-6. Sign in as **petry-review-bot** and accept the invitation
+6. Sign in as **donpetry-bot** and accept the invitation
 7. Sign back in as **don-petry**
 
 ## Step 3: Create **Classic** PAT for Bot Account
@@ -78,13 +78,13 @@ The bot needs to be allowed as an approver in branch protection settings.
 2. Click on the `main` branch protection rule (or create one)
 3. In "Require pull request reviews before merging":
    - Make sure the bot is **NOT** in the "Dismiss stale pull request approvals" dismissal restrictions
-   - Add `petry-review-bot` to the list of **allowed approvers** if that field exists
+   - Add `donpetry-bot` to the list of **allowed approvers** if that field exists
 4. Save
 
 **Alternative:** If using GitHub Rulesets instead of branch protection:
 1. Go to https://github.com/don-petry/pr-review-agent/rules
 2. Edit the main branch ruleset
-3. Under "Require reviews," ensure `petry-review-bot` can post approvals
+3. Under "Require reviews," ensure `donpetry-bot` can post approvals
 4. Save
 
 ## Step 6: Configure Across Multiple Repos
@@ -110,7 +110,7 @@ Repeat **Step 5** for any other repos where the bot should approve PRs:
 3. Should show:
    ```
    GH_TOKEN set: yes-masked
-   Authenticated as: petry-review-bot
+   Authenticated as: donpetry-bot
    ```
 
 4. If authentication is correct, run the actual fixes:
@@ -122,11 +122,11 @@ Repeat **Step 5** for any other repos where the bot should approve PRs:
 
 ### Issue: Still authenticating as `don-petry`
 - Verify `GH_PAT` secret contains the **bot account's** PAT, not don-petry's token
-- Check the PAT was generated from petry-review-bot's account, not don-petry's
+- Check the PAT was generated from donpetry-bot's account, not don-petry's
 
 ### Issue: "Review Can not approve your own pull request"
 - The PAT is don-petry's token (causes self-approval attempts)
-- Generate a fresh PAT from petry-review-bot's account
+- Generate a fresh PAT from donpetry-bot's account
 
 ### Issue: Bot can't approve PRs in certain repos
 - Verify bot is a member of the organization
@@ -135,7 +135,7 @@ Repeat **Step 5** for any other repos where the bot should approve PRs:
 
 ## Rotating the Token (Annually)
 
-1. Sign in as **petry-review-bot**
+1. Sign in as **donpetry-bot**
 2. Go to **Settings → Developer settings → Tokens (classic)**
 3. Generate a new token with same settings
 4. Update the `GH_PAT` secret in the repo with the new token

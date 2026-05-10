@@ -14,7 +14,7 @@ This repository automates PR reviews for the `petry-projects` organization using
 
 ### Prerequisites
 - GitHub organization: `petry-projects`
-- Machine user account (e.g., `petry-pr-bot`) added to org team in CODEOWNERS
+- Machine user account (e.g., `donpetry-bot`) added to org team in CODEOWNERS
 - Secrets configured in the repository
 
 ### Repository Secrets Required
