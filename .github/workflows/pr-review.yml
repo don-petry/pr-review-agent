@@ -66,6 +66,10 @@ jobs:
       MAX_REVIEW_CYCLES: ${{ vars.MAX_REVIEW_CYCLES || '3' }}
       MAX_PRS: ${{ vars.MAX_PRS || '10' }}
       CANDIDATE_LIMIT: ${{ vars.CANDIDATE_LIMIT || '100' }}
+      # Pin via vars.CLAUDE_CODE_VERSION for fully reproducible caching; default
+      # 'latest' caches an install indefinitely under that key — flush via the
+      # Actions cache UI or bump the variable to pick up new releases.
+      CLAUDE_CODE_VERSION: ${{ vars.CLAUDE_CODE_VERSION || 'latest' }}
       # Mention-triggered reviews always force; workflow_dispatch respects the input.
       FORCE_REVIEW: ${{ github.event_name == 'repository_dispatch' && 'true' || inputs.force_review || 'false' }}
 
@@ -73,20 +77,43 @@ jobs:
       - name: Checkout agent repo
         uses: actions/checkout@v5
 
+      - name: Cache claude-code CLI
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm-global
+          key: claude-code-${{ env.CLAUDE_CODE_VERSION }}-${{ runner.os }}
+
       - name: Install review engine CLIs
         run: |
           set -euo pipefail
           gh auth status
+
+          # Use a per-user prefix so actions/cache (above) can persist the
+          # install across runs without needing root. Add the bin dir to PATH
+          # for both this step and every subsequent step in the job.
+          mkdir -p "$HOME/.npm-global"
+          npm config set prefix "$HOME/.npm-global"
+          echo "$HOME/.npm-global/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.npm-global/bin:$PATH"
+
+          install_claude() {
+            if command -v claude >/dev/null 2>&1; then
+              echo "claude-code cache hit: $(claude --version)"
+              return 0
+            fi
+            npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+          }
+
           case "$REVIEW_ENGINE" in
             claude)
-              npm install -g @anthropic-ai/claude-code
+              install_claude
               if ! env GH_TOKEN="$COPILOT_GITHUB_TOKEN" gh copilot --version > /dev/null 2>&1; then
                 echo "::warning::gh copilot built-in unavailable with user token — rate-limit fallback will be unavailable."
               fi
               ;;
             copilot)
               gh extension install github/gh-copilot
-              npm install -g @anthropic-ai/claude-code || true
+              install_claude || true
               ;;
             *)
               echo "::error::Unknown REVIEW_ENGINE=$REVIEW_ENGINE"
