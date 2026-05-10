@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# Run the cascading review against every PR listed in $PRS_FILE (default
+# prs.txt). One PR per line. Empty input is a no-op.
+#
+# Env (passed through from the workflow):
+#   PRS_FILE          — path to candidate list (default: prs.txt)
+#   MAX_PRS           — stop after this many actual reviews (no-ops don't count)
+#   CANDIDATE_LIMIT   — hard cap on candidates inspected (timeout backstop)
+#   REVIEW_ENGINE     — primary engine (claude|copilot); may be flipped on
+#                       rate-limit fallback
+#   GH_TOKEN          — workflow auth (set at job level)
+#
+# Exit:
+#   0 — finished cleanly (zero or more reviews posted)
+#   1 — session aborted early (a non-skip failure on some PR; remaining
+#       candidates are deferred to the next scheduled run)
+
+set -euo pipefail
+
+PRS_FILE="${PRS_FILE:-prs.txt}"
+MAX_PRS="${MAX_PRS:-10}"
+CANDIDATE_LIMIT="${CANDIDATE_LIMIT:-100}"
+
+if [ ! -s "$PRS_FILE" ]; then
+  echo "::notice::No candidate PRs to review."
+  exit 0
+fi
+
+actual=0
+skipped_noops=0
+failed=0
+engine_fallbacks=0
+processed=0
+session_aborted=0
+abort_pr=""
+abort_reason=""
+total_candidates=$(grep -c . "$PRS_FILE" || true)
+
+while IFS= read -r pr_url; do
+  [ -z "$pr_url" ] && continue
+  processed=$((processed + 1))
+
+  if [ "$processed" -gt "$CANDIDATE_LIMIT" ]; then
+    echo "::notice::Hit CANDIDATE_LIMIT=$CANDIDATE_LIMIT, stopping batch"
+    break
+  fi
+  if [ "$actual" -ge "$MAX_PRS" ]; then
+    echo "::notice::Reached MAX_PRS=$MAX_PRS actual reviews, stopping batch"
+    break
+  fi
+
+  echo "::group::Reviewing $pr_url"
+  rc=0
+  bash scripts/review-one-pr.sh "$pr_url" || rc=$?
+
+  # Exit code 2 = engine rate-limited. Switch from claude to copilot once,
+  # then retry this PR. All later PRs in the batch use copilot too.
+  if [ "$rc" -eq 2 ] && [ "${REVIEW_ENGINE:-claude}" = "claude" ]; then
+    if ! gh extension list 2>/dev/null | grep -q copilot; then
+      echo "::warning::Copilot fallback engine unavailable (not installed) — skipping $pr_url and continuing batch"
+      failed=$((failed + 1))
+      echo "::endgroup::"
+      continue
+    fi
+    echo "::warning::Claude rate limit hit — switching to Copilot engine for remaining PRs"
+    export REVIEW_ENGINE=copilot
+    engine_fallbacks=$((engine_fallbacks + 1))
+    rc=0
+    bash scripts/review-one-pr.sh "$pr_url" || rc=$?
+  fi
+
+  case "$rc" in
+    0)
+      actual=$((actual + 1))
+      echo "::notice::Review posted ($actual/$MAX_PRS)"
+      ;;
+    100)
+      skipped_noops=$((skipped_noops + 1))
+      echo "::notice::No-op (already reviewed)"
+      ;;
+    2)
+      failed=$((failed + 1))
+      echo "::error::Rate limit hit on $REVIEW_ENGINE engine, no fallback available for $pr_url"
+      session_aborted=1
+      abort_pr="$pr_url"
+      abort_reason="rate-limit on fallback engine"
+      ;;
+    *)
+      # Other failure — session-fatal. A systemic problem (model degraded,
+      # prompt regression, malformed verdicts) shouldn't burn the queue.
+      failed=$((failed + 1))
+      echo "::error::Review failed for $pr_url (exit code $rc)"
+      session_aborted=1
+      abort_pr="$pr_url"
+      abort_reason="exit code $rc"
+      ;;
+  esac
+
+  echo "::endgroup::"
+  [ "$session_aborted" -eq 1 ] && break
+done < "$PRS_FILE"
+
+remaining=$((total_candidates - processed))
+summary="Summary: $actual reviews posted, $skipped_noops no-ops skipped, $failed failures"
+[ "$engine_fallbacks" -gt 0 ] && summary="$summary, $engine_fallbacks engine fallback(s) to copilot"
+summary="$summary (processed $processed/$total_candidates candidates)"
+
+if [ "$session_aborted" -eq 1 ]; then
+  echo "::error::Session aborted early after failure on $abort_pr ($abort_reason). Skipped $remaining remaining candidate(s); will retry on next scheduled run."
+  echo "$summary [SESSION ABORTED EARLY]"
+  exit 1
+fi
+
+echo "$summary"
