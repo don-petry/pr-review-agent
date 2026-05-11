@@ -46,8 +46,12 @@ and **Copilot**.
    model tiers. Different model families have different blind spots — running
    both catches issues that either alone would miss.
 
-   The rubber duck is **always the opposite engine**: if `REVIEW_ENGINE=claude`,
-   the duck is Copilot (GPT-5.4), and vice versa. No extra configuration needed.
+   The rubber duck is **always a diverse engine**:
+   - If `REVIEW_ENGINE=claude`, the duck is Copilot (GPT-5.4).
+   - If `REVIEW_ENGINE=gemini`, the duck is Claude (Sonnet 4.6).
+   - If `REVIEW_ENGINE=copilot`, the duck is Claude (Sonnet 4.6).
+
+   No extra configuration needed.
 
    **Graceful degradation:** if the rubber duck fails (missing credentials,
    CLI not installed, timeout), the cascade continues with the primary deep
@@ -298,7 +302,7 @@ PR comment "@petry-review-bot please review"
 ## Architecture
 
 ```
-scripts/engine.sh         ← LLM abstraction (claude/copilot dispatch)
+scripts/engine.sh         ← LLM abstraction (claude/gemini/copilot dispatch)
 scripts/review-one-pr.sh  ← Cascade orchestrator (sources engine.sh)
 scripts/list-prs.sh       ← PR enumeration
 
@@ -313,8 +317,9 @@ prompts/shared.md         ← Shared risk taxonomy and decision gates
 ## Cost
 
 Uses the configured engine's billing:
-- **Claude:** Max plan via OAuth token — no per-token API billing.
-- **Copilot:** Included in GitHub Copilot subscription.
+- **Claude**: Max plan via OAuth token — no per-token API billing.
+- **Gemini**: API-based billing via `GOOGLE_API_KEY`.
+- **Copilot**: Included in GitHub Copilot subscription.
 
 GitHub Actions cost is ~720 runs/month (hourly × 30 days). Runs with zero
 candidate PRs finish in ~10s. Each PR reviewed costs ~2-5 min of runner time

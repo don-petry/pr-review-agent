@@ -162,23 +162,22 @@ This script runs with machine user PAT credentials that can approve PRs across t
 
 ## Rate Limiting and Fallback
 
-The `pr-review.yml` workflow includes fallback logic:
+The `scripts/review-batch.sh` script includes fallback logic:
 
 ```bash
+# Fallback chain: claude -> gemini -> copilot
 if [ "$rc" -eq 2 ] && [ "${REVIEW_ENGINE:-claude}" = "claude" ]; then
-  echo "Claude rate limit hit — switching to Gemini engine for remaining PRs"
   export REVIEW_ENGINE=gemini
-  bash scripts/review-one-pr.sh "$pr_url" || rc=$?
+  # ... retry this PR with gemini ...
 fi
 
 if [ "$rc" -eq 2 ] && [ "${REVIEW_ENGINE}" = "gemini" ]; then
-  echo "Gemini rate limit hit — switching to Copilot engine for remaining PRs"
   export REVIEW_ENGINE=copilot
-  bash scripts/review-one-pr.sh "$pr_url" || rc=$?
+  # ... retry this PR with copilot ...
 fi
 ```
 
-If Claude hits rate limits, the workflow switches to Gemini, and then to GitHub Copilot if needed. This ensures reviews continue even under high load.
+If Claude hits rate limits, the batch switches to Gemini, and then to GitHub Copilot if needed. This ensures reviews continue even under high load.
 
 ## Metrics and Monitoring
 
@@ -186,7 +185,7 @@ Key metrics tracked in workflow logs:
 - **Reviews posted:** Number of PRs actually approved
 - **No-ops skipped:** PRs already reviewed, not re-reviewed
 - **Failures:** PRs that had errors during review
-- **Engine fallbacks:** Times Claude rate limit triggered Copilot fallback
+- **Engine fallbacks:** Cumulative count and specific engines used (e.g., \"gemini, copilot\")
 
 View recent runs:
 ```bash
@@ -215,10 +214,10 @@ gh run view <run-id> --repo don-petry/pr-review-agent --log
 
 | Secret | Purpose |
 |--------|---------|
+| `DON_PETRY_BOT_GH_PAT` | Machine user PAT for GitHub API access (BOT_USER) |
+| `GH_PAT` | User PAT with Copilot subscription (fallback source) |
 | `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code authentication |
 | `GOOGLE_API_KEY` | Gemini API authentication |
-| `DON_PETRY_BOT_PETRY_PROJECT_PAT` | Machine user PAT for GitHub API access |
-| `COPILOT_GITHUB_TOKEN` | GitHub Copilot fallback token |
 
 ## File Structure
 

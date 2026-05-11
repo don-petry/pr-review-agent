@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Engine abstraction layer for LLM invocations.
-# Supports: claude, copilot
+# Supports: claude, gemini, copilot
 #
 # Sourced by review-one-pr.sh — provides:
 #   run_triage <prompt_file>       — no-tool tier (stdout capture)
@@ -79,11 +79,11 @@ export DUCK_ENGINE DUCK_MODEL
 echo "    engine: $REVIEW_ENGINE ($ENGINE_LABEL)"
 
 # is_rate_limited <text>
-# Returns 0 (true) if the text looks like a Claude or Copilot rate-limit message.
+# Returns 0 (true) if the text looks like a Claude, Gemini, or Copilot rate-limit message.
 # review-one-pr.sh exits with code 2 when this fires so the caller can switch engines.
 is_rate_limited() {
   local text="$1"
-  echo "$text" | grep -qiE "(hit your limit|rate[ -]?limit|resets [0-9]+(am|pm)|usage limit|quota exceeded|too many requests|exceeded.*quota|429|exhausted)"
+  echo "$text" | grep -qiE "(hit your limit|rate[ -]?limit|resets [0-9]+(am|pm)|usage limit|quota exceeded|too many requests|exceeded.*quota|\b429\b|exhausted)"
 }
 
 # is_transient_failure <exit_code>

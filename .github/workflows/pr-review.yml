@@ -120,7 +120,10 @@ jobs:
               install_claude || true
               ;;
             copilot)
-              gh extension install github/gh-copilot
+              # Best-effort install of copilot if built-in is missing
+              if ! gh copilot --version > /dev/null 2>&1; then
+                gh extension install github/gh-copilot || true
+              fi
               install_claude || true
               npm install -g @google/gemini-cli || true
               ;;

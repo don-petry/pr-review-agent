@@ -1,12 +1,13 @@
 # PR Review Agent Setup
 
-This repository automates PR reviews for the `petry-projects` organization using Claude Code or GitHub Copilot.
+This repository automates PR reviews for the `petry-projects` organization using
+Claude Code, Google Gemini, or GitHub Copilot.
 
 ## Quick Start
 
 ### Prerequisites
 - GitHub organization: `petry-projects`
-- Machine user account (e.g., `petry-pr-bot`) added to org team in CODEOWNERS
+- Machine user account (e.g., `don-petry-bot`) added to org team in CODEOWNERS
 - Secrets configured in the repository
 
 ### Repository Secrets Required
@@ -15,10 +16,10 @@ Store these in the repository settings (`Settings → Secrets and variables → 
 
 | Secret | Description | Source |
 |--------|-------------|--------|
+| `DON_PETRY_BOT_GH_PAT` | Machine user PAT for GitHub API access | Generated from machine user account settings |
+| \`GH_PAT\` | User PAT with Copilot subscription (for fallback) | GitHub PAT with Copilot scope |
 | `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code authentication token | `claude setup-token` |
 | `GOOGLE_API_KEY` | Gemini API authentication token | Google AI Studio / Vertex AI |
-| `DON_PETRY_BOT_PETRY_PROJECT_PAT` | Machine user fine-grained PAT | Generated from machine user account settings |
-| `COPILOT_GITHUB_TOKEN` | GitHub Copilot token (optional, for fallback) | GitHub PAT with Copilot scope |
 
 ### Repository Variables (Optional)
 
