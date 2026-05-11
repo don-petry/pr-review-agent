@@ -35,28 +35,28 @@ This repository contains several documentation files describing the PR Review Ag
 
 ```
 .github/workflows/
-├── pr-review.yml           # Main hourly review workflow
-└── fix-stuck-prs.yml       # Cleanup for stuck PRs
+    ├── pr-review.yml           # Main hourly review workflow
+    └── fix-stuck-prs.yml       # Cleanup for stuck PRs
 
 scripts/
-├── list-prs.sh             # Find candidate PRs
-├── review-one-pr.sh        # Orchestrate review
-├── post-pr-review.sh       # Post approval and auto-merge
-└── fix-stuck-prs.sh        # Fix old stuck PRs
+    ├── list-prs.sh             # Find candidate PRs
+    ├── review-one-pr.sh        # Orchestrate review
+    ├── post-pr-review.sh       # Post approval and auto-merge
+    └── fix-stuck-prs.sh        # Fix old stuck PRs
 
 prompts/
-├── shared.md               # Shared context
-├── triage.md               # Quick assessment
-├── deep-review.md          # Code analysis
-├── security-audit.md       # Vulnerability check
-└── synthesize.md           # Final verdict
+    ├── shared.md               # Shared context
+    ├── triage.md               # Quick assessment
+    ├── deep-review.md          # Code analysis
+    ├── security-audit.md       # Vulnerability check
+    └── synthesize.md           # Final verdict
 
-docs/
-├── setup.md                # Quick start (read first)
-├── pr-review-agent.md                # Full documentation
-├── implementation.md       # Technical details
-├── machine-user-setup.md   # Machine user and PAT setup
-└── documentation-index.md        # This file
+docs/pr-review-agent/
+    ├── setup.md                # Quick start (read first)
+    ├── pr-review-agent.md                # Full documentation
+    ├── implementation.md       # Technical details
+    ├── machine-user-setup.md   # Machine user and PAT setup
+    └── documentation-index.md        # This file
 ```
 
 ## Common Tasks
