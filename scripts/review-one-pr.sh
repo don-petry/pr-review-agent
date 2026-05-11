@@ -350,7 +350,10 @@ fi
 # of the session and the next hourly run retries fresh.
 if [ "$TRIAGE_RC" -ne 0 ]; then
   echo "::warning::triage exited with code $TRIAGE_RC"
-  cat "$TRIAGE_LOG" 2>/dev/null || true
+  # claude --print writes errors to stdout (TRIAGE_RESULT), not stderr — surface
+  # both channels so the actual failure message is always visible in CI logs.
+  [ -n "$TRIAGE_RESULT" ] && echo "    triage stdout: $TRIAGE_RESULT"
+  [ -n "$TRIAGE_STDERR" ] && echo "    triage stderr: $TRIAGE_STDERR"
   echo "::error::cascade failed at tier 1 (triage process exit $TRIAGE_RC) for $PR_URL"
   exit 1
 fi
