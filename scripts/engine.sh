@@ -83,7 +83,7 @@ echo "    engine: $REVIEW_ENGINE ($ENGINE_LABEL)"
 # review-one-pr.sh exits with code 2 when this fires so the caller can switch engines.
 is_rate_limited() {
   local text="$1"
-  echo "$text" | grep -qiE "(hit your limit|rate[ -]?limit|resets [0-9]+(am|pm)|usage limit|quota exceeded|too many requests|exceeded.*quota|\b429\b|exhausted)"
+  echo "$text" | grep -qiE "(hit your limit|rate[ -]?limit|resets [0-9]+(am|pm)|usage limit|quota exceeded|too many requests|exceeded.*quota|([^0-9]|^)429([^0-9]|$)|exhausted)"
 }
 
 # is_transient_failure <exit_code>
@@ -127,7 +127,7 @@ run_triage() {
       gemini)
         timeout "$TRIAGE_TIMEOUT_SEC" gemini --prompt "" \
           --model "$ENGINE_TRIAGE_MODEL" \
-          --approval-mode plan \
+          --approval-mode auto_edit \
           --output-format text \
           < "$prompt_file" || rc=$?
         ;;
@@ -227,7 +227,7 @@ sys.exit(1)
 
 # run_duck <prompt_file> <model>
 # Cross-engine adversarial "rubber duck" review.
-# Always uses the OPPOSITE engine from REVIEW_ENGINE. Output to stdout.
+# Always uses a different model family from REVIEW_ENGINE. Output to stdout.
 # Strips the opposing engine's credentials to prevent cross-engine leakage.
 run_duck() {
   local prompt_file="$1"

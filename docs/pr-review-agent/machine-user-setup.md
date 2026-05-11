@@ -1,6 +1,6 @@
 # Machine User Setup for PR Review Agent
 
-This project authenticates via a **machine user account** with a fine-grained PAT. This replaces the previous GitHub App approach, which could not satisfy CODEOWNERS approval requirements (see [issue #27](https://github.com/don-petry/pr-review-agent/issues/27)).
+This project authenticates via a **machine user account** with a fine-grained PAT. This replaces the previous GitHub App approach, which could not satisfy CODEOWNERS approval requirements (see [issue #27](https://github.com/petry-projects/.github-private/issues/27)).
 
 ## Why Machine User?
 
@@ -11,7 +11,7 @@ This project authenticates via a **machine user account** with a fine-grained PA
 
 ## Step 1: Create the Machine User Account
 
-1. Create a new GitHub account (e.g., `petry-pr-bot`) with a shared org email alias
+1. Create a new GitHub account (e.g., `donpetry-bot`) with a shared org email alias
 2. Add the account to the `petry-projects` organization
 3. Create an org team (e.g., `petry-projects/pr-reviewers`) and add the machine user
 
@@ -51,13 +51,13 @@ gh secret set DON_PETRY_BOT_GH_PAT --org petry-projects --body "<paste-token>"
 Or store at repo level if preferred:
 
 ```bash
-gh secret set DON_PETRY_BOT_GH_PAT --repo don-petry/pr-review-agent --body "<paste-token>"
+gh secret set DON_PETRY_BOT_GH_PAT --repo petry-projects/.github-private --body "<paste-token>"
 ```
 
 ### Verify the secret is set:
 
 ```bash
-gh secret list --repo don-petry/pr-review-agent
+gh secret list --repo petry-projects/.github-private
 ```
 
 Should show `DON_PETRY_BOT_GH_PAT` in the list.
@@ -66,10 +66,10 @@ Should show `DON_PETRY_BOT_GH_PAT` in the list.
 
 ```bash
 # Test dry-run
-gh workflow run fix-stuck-prs.yml --repo don-petry/pr-review-agent -f dry_run=true
+gh workflow run fix-stuck-prs.yml --repo petry-projects/.github-private -f dry_run=true
 
 # Check the logs
-gh run view <run-number> --repo don-petry/pr-review-agent --log | grep "Logged in"
+gh run view <run-number> --repo petry-projects/.github-private --log | grep "Logged in"
 ```
 
 Should show the machine user account name.
@@ -79,9 +79,9 @@ Should show the machine user account name.
 Once the migration is validated:
 
 ```bash
-gh secret delete APP_ID --repo don-petry/pr-review-agent
-gh secret delete APP_INSTALLATION_ID --repo don-petry/pr-review-agent
-gh secret delete APP_PRIVATE_KEY --repo don-petry/pr-review-agent
+gh secret delete APP_ID --repo petry-projects/.github-private
+gh secret delete APP_INSTALLATION_ID --repo petry-projects/.github-private
+gh secret delete APP_PRIVATE_KEY --repo petry-projects/.github-private
 ```
 
 Optionally uninstall/delete the GitHub App from [org settings](https://github.com/organizations/petry-projects/settings/apps).
@@ -92,7 +92,7 @@ Fine-grained PATs have a configurable expiry (90-day recommended). To rotate:
 
 1. Sign in as the machine user
 2. Generate a new fine-grained PAT with the same scopes
-3. Update the secret: `gh secret set DON_PETRY_BOT_GH_PAT --repo don-petry/pr-review-agent --body "<new-token>"`
+3. Update the secret: `gh secret set DON_PETRY_BOT_GH_PAT --repo petry-projects/.github-private --body "<new-token>"`
 4. Revoke the old token
 
 ## Trade-offs vs GitHub App
@@ -124,4 +124,4 @@ Fine-grained PATs have a configurable expiry (90-day recommended). To rotate:
 
 - [GitHub: Managing CODEOWNERS](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners)
 - [GitHub: Fine-grained PATs](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#fine-grained-personal-access-tokens)
-- [Issue #27: Why GitHub Apps can't be in CODEOWNERS](https://github.com/don-petry/pr-review-agent/issues/27)
+- [Issue #27: Why GitHub Apps can't be in CODEOWNERS](https://github.com/petry-projects/.github-private/issues/27)

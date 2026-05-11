@@ -57,12 +57,18 @@ while IFS= read -r pr_url; do
   # Exit code 2 = engine rate-limited.
   # Fallback chain: claude -> gemini -> copilot
   if [ "$rc" -eq 2 ] && [ "${REVIEW_ENGINE:-claude}" = "claude" ]; then
-    echo "::warning::Claude rate limit hit — switching to Gemini engine for remaining PRs"
-    export REVIEW_ENGINE=gemini
-    engine_fallbacks=$((engine_fallbacks + 1))
-    fallback_engines="${fallback_engines:+$fallback_engines, }gemini"
-    rc=0
-    bash scripts/review-one-pr.sh "$pr_url" || rc=$?
+    if command -v gemini >/dev/null 2>&1 && [ -n "${GOOGLE_API_KEY:-}" ]; then
+      echo "::warning::Claude rate limit hit — switching to Gemini engine for remaining PRs"
+      export REVIEW_ENGINE=gemini
+      engine_fallbacks=$((engine_fallbacks + 1))
+      fallback_engines="${fallback_engines:+$fallback_engines, }gemini"
+      rc=0
+      bash scripts/review-one-pr.sh "$pr_url" || rc=$?
+    else
+      echo "::warning::Claude rate limit hit but Gemini fallback unavailable (CLI not installed or GOOGLE_API_KEY missing) — falling through to Copilot"
+      rc=2
+      export REVIEW_ENGINE=gemini # Set to gemini so the next block catches it
+    fi
   fi
 
   if [ "$rc" -eq 2 ] && [ "${REVIEW_ENGINE}" = "gemini" ]; then

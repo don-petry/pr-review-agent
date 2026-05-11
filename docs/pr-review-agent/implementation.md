@@ -185,7 +185,7 @@ Key metrics tracked in workflow logs:
 - **Reviews posted:** Number of PRs actually approved
 - **No-ops skipped:** PRs already reviewed, not re-reviewed
 - **Failures:** PRs that had errors during review
-- **Engine fallbacks:** Cumulative count and specific engines used (e.g., \"gemini, copilot\")
+- **Engine fallbacks**: Cumulative count and specific engines used (e.g., "gemini, copilot")
 
 View recent runs:
 ```bash

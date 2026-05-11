@@ -7,7 +7,7 @@ Claude Code, Google Gemini, or GitHub Copilot.
 
 ### Prerequisites
 - GitHub organization: `petry-projects`
-- Machine user account (e.g., `don-petry-bot`) added to org team in CODEOWNERS
+- Machine user account (e.g., `donpetry-bot`) added to org team in CODEOWNERS
 - Secrets configured in the repository
 
 ### Repository Secrets Required
@@ -17,7 +17,7 @@ Store these in the repository settings (`Settings → Secrets and variables → 
 | Secret | Description | Source |
 |--------|-------------|--------|
 | `DON_PETRY_BOT_GH_PAT` | Machine user PAT for GitHub API access | Generated from machine user account settings |
-| \`GH_PAT\` | User PAT with Copilot subscription (for fallback) | GitHub PAT with Copilot scope |
+| `GH_PAT` | User PAT with Copilot subscription (for fallback) | GitHub PAT with Copilot scope |
 | `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code authentication token | `claude setup-token` |
 | `GOOGLE_API_KEY` | Gemini API authentication token | Google AI Studio / Vertex AI |
 
@@ -62,14 +62,14 @@ When the agent approves a PR:
 ### Dry-run (test without posting)
 ```bash
 gh workflow run pr-review.yml \
-  --repo don-petry/pr-review-agent \
+  --repo petry-projects/.github-private \
   -f dry_run=true
 ```
 
 ### Review a specific PR
 ```bash
 gh workflow run pr-review.yml \
-  --repo don-petry/pr-review-agent \
+  --repo petry-projects/.github-private \
   -f pr_url=https://github.com/petry-projects/ContentTwin/pull/123 \
   -f dry_run=false
 ```
@@ -78,7 +78,7 @@ gh workflow run pr-review.yml \
 If PRs have agent comments but no approval reviews (from an older bug), use:
 ```bash
 gh workflow run fix-stuck-prs.yml \
-  --repo don-petry/pr-review-agent \
+  --repo petry-projects/.github-private \
   -f dry_run=true
 ```
 
@@ -90,7 +90,7 @@ The `pr-review.yml` workflow runs hourly at `:07` to avoid the top-of-hour cron 
 
 To check recent runs:
 ```bash
-gh run list --repo don-petry/pr-review-agent -w pr-review.yml -L 5
+gh run list --repo petry-projects/.github-private -w pr-review.yml -L 5
 ```
 
 ## Troubleshooting
@@ -114,7 +114,7 @@ gh run list --repo don-petry/pr-review-agent -w pr-review.yml -L 5
 
 The bot authenticates as a machine user account with a fine-grained PAT stored as the `DON_PETRY_BOT_GH_PAT` secret. The machine user is added to an org team listed in CODEOWNERS, so its approvals satisfy code owner review requirements.
 
-For full setup instructions, see [MACHINE_USER_SETUP.md](machine-user-setup.md).
+For full setup instructions, see [machine-user-setup.md](machine-user-setup.md).
 
 ## Architecture
 
@@ -146,5 +146,5 @@ prompts/
 
 ## Related Documentation
 
-- [AGENT.md](pr-review-agent.md) — Full agent capabilities and design
-- [MACHINE_USER_SETUP.md](machine-user-setup.md) — Machine user creation, PAT setup, and rotation
+- [pr-review-agent.md](pr-review-agent.md) — Full agent capabilities and design
+- [machine-user-setup.md](machine-user-setup.md) — Machine user creation, PAT setup, and rotation
