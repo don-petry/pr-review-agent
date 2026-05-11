@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # Engine abstraction layer for LLM invocations.
-# Supports: claude, copilot
+# Supports: claude, gemini, copilot
 #
 # Sourced by review-one-pr.sh — provides:
 #   run_triage <prompt_file>       — no-tool tier (stdout capture)
@@ -32,29 +33,41 @@ case "$REVIEW_ENGINE" in
   claude)
     ENGINE_TRIAGE_MODEL="claude-haiku-4-5-20251001"
     ENGINE_DEEP_MODEL="claude-sonnet-4-6"
-    ENGINE_AUDIT_MODEL="claude-opus-4-6"
+    ENGINE_AUDIT_MODEL="claude-opus-4-7"
     ENGINE_ACTION_MODEL="claude-sonnet-4-6"
-    ENGINE_SINGLE_MODEL="claude-opus-4-6"
-    ENGINE_LABEL="triage: haiku 4.5 → deep: sonnet 4.6 + duck: gpt-5.4 → audit: opus 4.6"
-    ENGINE_SINGLE_LABEL="single-reviewer mode: opus 4.6"
+    ENGINE_SINGLE_MODEL="claude-opus-4-7"
+    ENGINE_LABEL="triage: haiku 4.5 → deep: sonnet 4.6 + duck: o4-mini → audit: opus 4.7"
+    ENGINE_SINGLE_LABEL="single-reviewer mode: opus 4.7"
     # Cross-engine rubber duck: always the opposite engine
     DUCK_ENGINE="copilot"
-    DUCK_MODEL="gpt-5.4"
+    DUCK_MODEL="o4-mini"
+    ;;
+  gemini)
+    ENGINE_TRIAGE_MODEL="gemini-2.0-flash"
+    ENGINE_DEEP_MODEL="gemini-1.5-pro"
+    ENGINE_AUDIT_MODEL="gemini-1.5-pro"
+    ENGINE_ACTION_MODEL="gemini-1.5-pro"
+    ENGINE_SINGLE_MODEL="gemini-1.5-pro"
+    ENGINE_LABEL="triage: gemini-2.0-flash → deep: gemini-1.5-pro + duck: sonnet 4.6 → audit: gemini-1.5-pro"
+    ENGINE_SINGLE_LABEL="single-reviewer mode: gemini-1.5-pro"
+    # Cross-engine rubber duck: use Claude for diversity
+    DUCK_ENGINE="claude"
+    DUCK_MODEL="claude-sonnet-4-6"
     ;;
   copilot)
-    ENGINE_TRIAGE_MODEL="gpt-5-mini"
-    ENGINE_DEEP_MODEL="gpt-5.2"
-    ENGINE_AUDIT_MODEL="gpt-5.4"
-    ENGINE_ACTION_MODEL="gpt-5.2"
-    ENGINE_SINGLE_MODEL="gpt-5.4"
-    ENGINE_LABEL="triage: gpt-5-mini → deep: gpt-5.2 + duck: sonnet 4.6 → audit: gpt-5.4"
-    ENGINE_SINGLE_LABEL="single-reviewer mode: gpt-5.4"
+    ENGINE_TRIAGE_MODEL="o4-mini"
+    ENGINE_DEEP_MODEL="o4-mini"
+    ENGINE_AUDIT_MODEL="o4-mini"
+    ENGINE_ACTION_MODEL="o4-mini"
+    ENGINE_SINGLE_MODEL="o4-mini"
+    ENGINE_LABEL="triage: o4-mini → deep: o4-mini + duck: sonnet 4.6 → audit: o4-mini"
+    ENGINE_SINGLE_LABEL="single-reviewer mode: o4-mini"
     # Cross-engine rubber duck: always the opposite engine
     DUCK_ENGINE="claude"
     DUCK_MODEL="claude-sonnet-4-6"
     ;;
   *)
-    echo "::error::Unknown REVIEW_ENGINE='$REVIEW_ENGINE' (expected: claude or copilot)"
+    echo "::error::Unknown REVIEW_ENGINE='$REVIEW_ENGINE' (expected: claude, gemini, or copilot)"
     exit 1
     ;;
 esac
@@ -67,11 +80,14 @@ export DUCK_ENGINE DUCK_MODEL
 echo "    engine: $REVIEW_ENGINE ($ENGINE_LABEL)"
 
 # is_rate_limited <text>
-# Returns 0 (true) if the text looks like a Claude or Copilot rate-limit message.
+# Returns 0 (true) if the text looks like a provider usage/rate-limit block —
+# API-level (429), subscription/billing caps (plan limit, out of tokens, HTTP 402),
+# or service overload acting as a hard block (529).
 # review-one-pr.sh exits with code 2 when this fires so the caller can switch engines.
 is_rate_limited() {
   local text="$1"
-  echo "$text" | grep -qiE "(hit your limit|rate[ -]?limit|resets [0-9]+(am|pm)|usage limit|quota exceeded|too many requests|exceeded.*quota)"
+  echo "$text" | grep -qiE \
+    "(hit your limit|rate[ -]?limit|resets [0-9]+(am|pm)|usage limit|quota exceeded|too many requests|exceeded.*quota|([^0-9]|^)429([^0-9]|$)|exhausted|out of.*token|token.*exhaust|claude.*usage|usage.*claude|plan.*limit|subscription.*limit|billing.*limit|daily.*limit|monthly.*limit|([^0-9]|^)402([^0-9]|$)|([^0-9]|^)529([^0-9]|$))"
 }
 
 # is_transient_failure <exit_code>
@@ -112,11 +128,18 @@ run_triage() {
           --disallowed-tools "Bash,Read,Write,Edit,Grep,Glob,WebFetch,WebSearch,Task,TodoWrite,NotebookEdit" \
           < "$prompt_file" || rc=$?
         ;;
+      gemini)
+        timeout "$TRIAGE_TIMEOUT_SEC" gemini --prompt "" \
+          --model "$ENGINE_TRIAGE_MODEL" \
+          --approval-mode auto_edit \
+          --output-format text \
+          < "$prompt_file" || rc=$?
+        ;;
       copilot)
         # gh copilot is now a built-in; auth via GH_PAT (user token with Copilot subscription).
         # Model selection is not supported by gh copilot suggest — uses Copilot's default.
         ( export GH_TOKEN="$COPILOT_GITHUB_TOKEN"
-          timeout "$TRIAGE_TIMEOUT_SEC" gh copilot suggest "$(cat "$prompt_file")" --agent shell
+          timeout "$TRIAGE_TIMEOUT_SEC" gh copilot suggest -p "$(cat "$prompt_file")"
         ) || rc=$?
         ;;
     esac
@@ -155,11 +178,18 @@ run_agentic() {
         --allowed-tools "Bash,Read,Grep,Glob" \
         < "$prompt_file"
       ;;
+    gemini)
+      timeout "$DEEP_TIMEOUT_SEC" gemini --prompt "" \
+        --model "$model" \
+        --approval-mode auto_edit \
+        --output-format text \
+        < "$prompt_file"
+      ;;
     copilot)
       # gh copilot is now a built-in; auth via GH_PAT (user token with Copilot subscription).
       # Model selection is not supported by gh copilot suggest — uses Copilot's default.
       ( export GH_TOKEN="$COPILOT_GITHUB_TOKEN"
-        timeout "$DEEP_TIMEOUT_SEC" gh copilot suggest "$(cat "$prompt_file")" --agent shell
+        timeout "$DEEP_TIMEOUT_SEC" gh copilot suggest -p "$(cat "$prompt_file")"
       )
       ;;
   esac
@@ -201,7 +231,7 @@ sys.exit(1)
 
 # run_duck <prompt_file> <model>
 # Cross-engine adversarial "rubber duck" review.
-# Always uses the OPPOSITE engine from REVIEW_ENGINE. Output to stdout.
+# Always uses a different model family from REVIEW_ENGINE. Output to stdout.
 # Strips the opposing engine's credentials to prevent cross-engine leakage.
 run_duck() {
   local prompt_file="$1"
@@ -209,6 +239,7 @@ run_duck() {
   case "$DUCK_ENGINE" in
     claude)
       unset COPILOT_GITHUB_TOKEN 2>/dev/null || true
+      unset GOOGLE_API_KEY 2>/dev/null || true
       timeout "$DUCK_TIMEOUT_SEC" claude --print \
         --model "$model" \
         --permission-mode acceptEdits \
@@ -216,11 +247,21 @@ run_duck() {
         --max-turns 25 \
         < "$prompt_file"
       ;;
+    gemini)
+      unset CLAUDE_CODE_OAUTH_TOKEN 2>/dev/null || true
+      unset COPILOT_GITHUB_TOKEN 2>/dev/null || true
+      timeout "$DUCK_TIMEOUT_SEC" gemini --prompt "" \
+        --model "$model" \
+        --approval-mode auto_edit \
+        --output-format text \
+        < "$prompt_file"
+      ;;
     copilot)
       unset CLAUDE_CODE_OAUTH_TOKEN 2>/dev/null || true
+      unset GOOGLE_API_KEY 2>/dev/null || true
       # gh copilot is now a built-in; auth via GH_PAT (user token with Copilot subscription).
       ( export GH_TOKEN="$COPILOT_GITHUB_TOKEN"
-        timeout "$DUCK_TIMEOUT_SEC" gh copilot suggest "$(cat "$prompt_file")" --agent shell
+        timeout "$DUCK_TIMEOUT_SEC" gh copilot suggest -p "$(cat "$prompt_file")"
       )
       ;;
     *)

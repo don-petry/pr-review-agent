@@ -6,8 +6,9 @@
 #
 # Env:
 #   GH_TOKEN              — set by the workflow
-#   REVIEW_ENGINE         — "claude" or "copilot" (default: claude)
+#   REVIEW_ENGINE         — "claude", "gemini", or "copilot" (default: claude)
 #   CLAUDE_CODE_OAUTH_TOKEN — (claude engine) set by the workflow
+#   GOOGLE_API_KEY          — (gemini engine) set by the workflow
 #   COPILOT_GITHUB_TOKEN    — (copilot engine) set by the workflow
 #   DRY_RUN               — "true" or "false"
 #
@@ -160,7 +161,7 @@ This PR has been through $REVIEW_CYCLE automated review cycles (cap: $MAX_CYCLES
 
 Please take a look manually, or close this PR if it's no longer needed. Once a human review resolves the situation, remove the \`needs-human-review\` label and the cascade can be re-engaged on the next push.
 
-_Posted by the ${BOT_USER:-don-petry-bot} PR-review cascade._
+_Posted by the ${BOT_USER:-donpetry-bot} PR-review cascade._
 ESCALATION_END
     gh pr comment "$PR_URL" --body-file "$ESCALATION_BODY" || echo "    warn: gh pr comment failed — escalation marker not posted; will retry next cycle"
     gh pr edit "$PR_URL" --add-label needs-human-review 2>/dev/null || true
@@ -264,11 +265,15 @@ TRIAGE_RESULT=$(
 # subprocess forks (jq, claude) from hitting E2BIG on hundreds-of-KB diffs.
 unset PR_DIFF PR_METADATA
 
-# Detect rate limit before JSON validation — exit 2 so the caller can fall back
-# to a different engine rather than burning through the remaining PR queue.
-if is_rate_limited "$TRIAGE_RESULT"; then
-  echo "    [tier1] rate limit detected — exiting with code 2 for engine fallback"
-  echo "    rate limit message: $TRIAGE_RESULT"
+# Detect rate limit before JSON validation — check both stdout and stderr,
+# then exit 2 so the caller can fall back to a different engine rather than
+# burning through the remaining PR queue.
+# Claude Code writes its usage-cap error to stdout (captured in TRIAGE_RESULT);
+# some other providers write to stderr (TRIAGE_LOG) — check both channels.
+TRIAGE_STDERR=$(cat "$TRIAGE_LOG" 2>/dev/null || true)
+if [ "$TRIAGE_RC" -ne 0 ] && (is_rate_limited "$TRIAGE_RESULT" || is_rate_limited "$TRIAGE_STDERR"); then
+  echo "    [tier1] usage/rate limit detected — exiting with code 2 for engine fallback"
+  echo "    limit message: ${TRIAGE_RESULT:-}${TRIAGE_STDERR:+ (stderr: $TRIAGE_STDERR)}"
   exit 2
 fi
 
@@ -280,7 +285,10 @@ fi
 # of the session and the next hourly run retries fresh.
 if [ "$TRIAGE_RC" -ne 0 ]; then
   echo "::warning::triage exited with code $TRIAGE_RC"
-  cat "$TRIAGE_LOG" 2>/dev/null || true
+  # claude --print writes errors to stdout (TRIAGE_RESULT), not stderr — surface
+  # both channels so the actual failure message is always visible in CI logs.
+  [ -n "$TRIAGE_RESULT" ] && echo "    triage stdout: $TRIAGE_RESULT"
+  [ -n "$TRIAGE_STDERR" ] && echo "    triage stderr: $TRIAGE_STDERR"
   echo "::error::cascade failed at tier 1 (triage process exit $TRIAGE_RC) for $PR_URL"
   exit 1
 fi
