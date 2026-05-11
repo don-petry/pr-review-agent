@@ -64,7 +64,7 @@ jobs:
     if: >-
       github.event_name == 'check_run' &&
       github.event.check_run.conclusion == 'failure' &&
-      !startsWith(github.event.check_run.name, 'Claude Code')
+      !contains(fromJson('["claude","claude-ci-fix","claude-issue"]'), github.event.check_run.name)
     concurrency:
       group: claude-ci-fix-${{ github.event.check_run.head_sha }}
       cancel-in-progress: true
@@ -88,6 +88,15 @@ jobs:
             PR=$(gh api \
               "repos/${{ github.repository }}/commits/${{ github.event.check_run.head_sha }}/pulls" \
               --jq '[.[] | select(.state == "open")] | first | .number // empty')
+          fi
+          # Trust gate: skip fork PRs — this job has write/secret access
+          if [ -n "$PR" ]; then
+            HEAD_REPO=$(gh api "repos/${{ github.repository }}/pulls/$PR" \
+              --jq '.head.repo.full_name // empty')
+            if [ "$HEAD_REPO" != "${{ github.repository }}" ]; then
+              echo "Skipping: fork PR (head=$HEAD_REPO)"
+              PR=""
+            fi
           fi
           echo "number=$PR" >> "$GITHUB_OUTPUT"
       - name: Checkout repository
