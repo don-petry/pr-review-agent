@@ -35,11 +35,6 @@ while maintaining review quality:
 
 ## Review protocol
 
-### Step 0 — Idempotency check (before any tool calls)
-
-1. Check for idempotency marker `<!-- pr-review-agent v1 sha=<HEAD_SHA> -->` in existing reviews/comments.
-2. **If already reviewed at this SHA, stop immediately.** Do not proceed further.
-
 ### Step 1 — Fetch PR context
 
 ```
@@ -47,15 +42,22 @@ gh pr view <url> --json number,title,body,author,isDraft,baseRefName,headRefName
 gh pr diff <url>
 ```
 
-### Step 2 — Tier 1: Triage (no tool calls)
+### Step 2 — Idempotency check (before any further tool calls)
+
+1. From the fetched `reviews` and `comments` fields, search for the marker `<!-- pr-review-agent v1 sha=<HEAD_SHA> -->` where `<HEAD_SHA>` matches the current `headRefOid`.
+2. **If the marker is found, stop immediately.** Do not make any additional tool calls or post a review.
+
+> **Why here:** The PR metadata fetch (Step 1) is the single mandatory tool call needed to load review history. All subsequent tool calls — codebase searches, file reads, duplication checks — happen in Tier 2 and beyond. Checking idempotency at this point ensures no unnecessary work begins.
+
+### Step 3 — Tier 1: Triage (no tool calls)
 
 Perform all of the following classifications using only the pre-fetched diff and metadata:
 
-#### 2a. Scope classification
+#### 3a. Scope classification
 
 Identify the primary intent of the PR in one sentence. If you cannot, flag **Large PR Gating** (see below).
 
-#### 2b. CI Weakening scan (pre-tool)
+#### 3b. CI Weakening scan (pre-tool)
 
 Scan the diff text for these patterns — no tool calls needed:
 
@@ -66,7 +68,7 @@ Scan the diff text for these patterns — no tool calls needed:
 
 If **any** are found, flag **CI_WEAKENING_DETECTED = true**. This is a hard-stop blocker — record the file path and line number.
 
-#### 2c. Large PR gate
+#### 3c. Large PR gate
 
 Escalate immediately to Tier 3 (without deep review) if **any** of the following are true:
 
@@ -76,7 +78,7 @@ Escalate immediately to Tier 3 (without deep review) if **any** of the following
 
 When escalating for large PR gating, post a comment requesting a structured breakdown before further review investment.
 
-#### 2d. PR Description Quality score
+#### 3d. PR Description Quality score
 
 Check the PR body for the presence of all five required elements:
 
@@ -90,7 +92,7 @@ Check the PR body for the presence of all five required elements:
 
 Record the count of missing elements. If 3 or more are missing, this generates a **MEDIUM** finding and triggers Tier 3 escalation.
 
-#### 2e. Risk classification
+#### 3e. Risk classification
 
 | Signal | Risk bump |
 |--------|-----------|
@@ -102,7 +104,7 @@ Record the count of missing elements. If 3 or more are missing, this generates a
 | Tests only, CI green | stays LOW |
 | Docs/comments only | stays LOW |
 
-#### 2f. Tier 1 exit decision
+#### 3f. Tier 1 exit decision
 
 - **CI_WEAKENING_DETECTED = true** → hard stop, escalate regardless of other signals
 - **Large PR gate triggered** → Tier 3 escalation immediately
@@ -111,7 +113,7 @@ Record the count of missing elements. If 3 or more are missing, this generates a
 
 ---
 
-### Step 3 — Tier 2: Deep review (structured order)
+### Step 4 — Tier 2: Deep review (structured order)
 
 Execute the following checks **in order**. Do not reorder them.
 
@@ -157,7 +159,7 @@ For MEDIUM and HIGH risk PRs, trace **at least one** critical path end-to-end:
 
 ---
 
-### Step 4 — Tier 3: Escalation
+### Step 5 — Tier 3: Escalation
 
 Fire Tier 3 for **any** of the following:
 
