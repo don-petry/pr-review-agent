@@ -86,7 +86,7 @@ echo "    engine: $REVIEW_ENGINE ($ENGINE_LABEL)"
 is_rate_limited() {
   local text="$1"
   echo "$text" | grep -qiE \
-    "(hit your limit|rate[ -]?limit|resets [0-9]+(am|pm)|usage limit|quota exceeded|too many requests|exceeded.*quota|([^0-9]|^)429([^0-9]|$)|exhausted|out of.*token|token.*exhaust|plan.*limit|subscription.*limit|billing.*limit|([^0-9]|^)402([^0-9]|$)|([^0-9]|^)529([^0-9]|$))"
+    "(hit your limit|rate[ -]?limit|resets [0-9]+(am|pm)|usage limit|quota exceeded|too many requests|exceeded.*quota|([^0-9]|^)429([^0-9]|$)|exhausted|out of.*token|token.*exhaust|claude.*usage|usage.*claude|plan.*limit|subscription.*limit|billing.*limit|daily.*limit|monthly.*limit|([^0-9]|^)402([^0-9]|$)|([^0-9]|^)529([^0-9]|$))"
 }
 
 # is_transient_failure <exit_code>
