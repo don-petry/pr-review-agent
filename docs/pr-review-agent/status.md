@@ -6,23 +6,23 @@
 ## What Was Done
 
 ### 1. Machine User Authentication ✅
-- Machine user account with fine-grained PAT stored as `DON_PETRY_BOT_PETRY_PROJECT_PAT` org secret
+- Machine user account with fine-grained PAT stored as `DON_PETRY_BOT_GH_PAT` org secret
 - Added to org team listed in CODEOWNERS — approvals satisfy code owner review requirements
 - Configured permissions: Contents (read), Pull requests (read/write), Checks (read)
-- All workflows use `${{ secrets.DON_PETRY_BOT_PETRY_PROJECT_PAT }}` directly (no token generation step needed)
+- All workflows use `${{ secrets.DON_PETRY_BOT_GH_PAT }}` directly (no token generation step needed)
 
-**Why Machine User?** (migrated from GitHub App — see [issue #27](https://github.com/don-petry/pr-review-agent/issues/27))
+**Why Machine User?** (migrated from GitHub App — see [issue #27](https://github.com/petry-projects/.github-private/issues/27))
 - GitHub Apps cannot be listed in CODEOWNERS (platform limitation)
 - Machine user approvals satisfy `require_code_owner_review` branch protection
 - Simpler auth: direct PAT, no JWT generation step
 
 ### 2. Comprehensive Documentation ✅
 Created in repository:
-- **SETUP.md** — Quick reference guide with configuration, secrets, commands, troubleshooting
-- **IMPLEMENTATION.md** — Technical deep dive: architecture, design decisions, stuck PR cleanup
-- **DOCUMENTATION.md** — Index linking all documentation
+- **setup.md** — Quick reference guide with configuration, secrets, commands, troubleshooting
+- **implementation.md** — Technical deep dive: architecture, design decisions, stuck PR cleanup
+- **documentation-index.md** — Index linking all documentation
 - **Updated README.md** — Status badge and quick links
-- **MACHINE_USER_SETUP.md** — Machine user account and PAT setup instructions
+- **machine-user-setup.md** — Machine user account and PAT setup instructions
 
 ### 3. Stuck PR Cleanup ✅ (Approvals Posted)
 Fixed 24 stuck PRs across three repositories:
@@ -83,65 +83,65 @@ This separation makes the system more robust and easier to debug. Agent decision
 ### Machine User over GitHub App
 Previously used: GitHub App (`petry-projects-pr-review-agent[bot]`) with auto-expiring JWT tokens.
 
-**Why we switched:** GitHub Apps cannot be listed in CODEOWNERS files, so repos with `require_code_owner_review: true` were permanently blocked. Machine user accounts can be added to org teams listed in CODEOWNERS, resolving this limitation. See [issue #27](https://github.com/don-petry/pr-review-agent/issues/27).
+**Why we switched:** GitHub Apps cannot be listed in CODEOWNERS files, so repos with `require_code_owner_review: true` were permanently blocked. Machine user accounts can be added to org teams listed in CODEOWNERS, resolving this limitation. See [issue #27](https://github.com/petry-projects/.github-private/issues/27).
 
 ## Configuration
 
 ### Required Secrets
 ```bash
-gh secret set DON_PETRY_BOT_PETRY_PROJECT_PAT --repo don-petry/pr-review-agent --body "<machine-user-pat>"
-gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo don-petry/pr-review-agent
+gh secret set DON_PETRY_BOT_GH_PAT --repo petry-projects/.github-private --body "<machine-user-pat>"
+gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo petry-projects/.github-private
 ```
 
 ### Optional Variables
 ```bash
 # Engine: claude (default) or copilot
-gh variable set REVIEW_ENGINE --repo don-petry/pr-review-agent --body "claude"
+gh variable set REVIEW_ENGINE --repo petry-projects/.github-private --body "claude"
 
 # Live mode: true to post reviews, false for dry-run
-gh variable set LIVE_MODE --repo don-petry/pr-review-agent --body "true"
+gh variable set LIVE_MODE --repo petry-projects/.github-private --body "true"
 
 # Max reviews per run
-gh variable set MAX_PRS --repo don-petry/pr-review-agent --body "10"
+gh variable set MAX_PRS --repo petry-projects/.github-private --body "10"
 ```
 
 ## Usage
 
 ### Check Recent Reviews
 ```bash
-gh run list --repo don-petry/pr-review-agent -w pr-review.yml -L 5
-gh run view <run-id> --repo don-petry/pr-review-agent --log
+gh run list --repo petry-projects/.github-private -w pr-review.yml -L 5
+gh run view <run-id> --repo petry-projects/.github-private --log
 ```
 
 ### Trigger Manual Review
 ```bash
 # Dry-run (no changes)
-gh workflow run pr-review.yml --repo don-petry/pr-review-agent -f dry_run=true
+gh workflow run pr-review.yml --repo petry-projects/.github-private -f dry_run=true
 
 # Review specific PR
-gh workflow run pr-review.yml --repo don-petry/pr-review-agent \
+gh workflow run pr-review.yml --repo petry-projects/.github-private \
   -f pr_url=https://github.com/petry-projects/ContentTwin/pull/123 \
   -f dry_run=false
 
 # Fix stuck PRs
-gh workflow run fix-stuck-prs.yml --repo don-petry/pr-review-agent -f dry_run=false
+gh workflow run fix-stuck-prs.yml --repo petry-projects/.github-private -f dry_run=false
 ```
 
 ## Known Limitations
 
 1. **Auto-merge requires repo settings**: Auto-merge must be enabled in each repo's settings for `gh pr merge --auto` to work.
 
-2. **PAT rotation**: Machine user PATs expire (90-day recommended). Set a calendar reminder to rotate. See [MACHINE_USER_SETUP.md](MACHINE_USER_SETUP.md).
+2. **PAT rotation**: Machine user PATs expire (90-day recommended). Set a calendar reminder to rotate. See [machine-user-setup.md](machine-user-setup.md).
 
 ## Support & Troubleshooting
 
-See **[SETUP.md](SETUP.md)** for:
+See **[setup.md](setup.md)** for:
 - Permission errors and fixes
 - Authentication issues
 - Workflow failures
 - Rate limiting and fallback engines
 
-See **[IMPLEMENTATION.md](IMPLEMENTATION.md)** for:
+See **[implementation.md](implementation.md)** for:
 - Architecture details
 - Design rationale
 - How each component works
@@ -157,5 +157,5 @@ See **[IMPLEMENTATION.md](IMPLEMENTATION.md)** for:
 ---
 
 **Created by:** Claude Code Agent  
-**Repository:** don-petry/pr-review-agent  
+**Repository:** petry-projects/.github-private  
 **Organization:** petry-projects

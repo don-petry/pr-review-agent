@@ -20,13 +20,13 @@ This document describes the current implementation of the PR Review Agent and ke
 
 ### Token Usage
 
-All workflows use the `DON_PETRY_BOT_PETRY_PROJECT_PAT` org secret directly:
+All workflows use the `DON_PETRY_BOT_GH_PAT` org secret directly:
 ```yaml
 env:
-  GH_TOKEN: ${{ secrets.DON_PETRY_BOT_PETRY_PROJECT_PAT }}
+  GH_TOKEN: ${{ secrets.DON_PETRY_BOT_GH_PAT }}
 ```
 
-The PAT is a fine-grained token scoped to the `petry-projects` organization with 90-day expiry. See [MACHINE_USER_SETUP.md](MACHINE_USER_SETUP.md) for rotation instructions.
+The PAT is a fine-grained token scoped to the `petry-projects` organization with 90-day expiry. See [MACHINE_USER_SETUP.md](machine-user-setup.md) for rotation instructions.
 
 ## PR Enumeration
 
@@ -162,17 +162,22 @@ This script runs with machine user PAT credentials that can approve PRs across t
 
 ## Rate Limiting and Fallback
 
-The `pr-review.yml` workflow includes fallback logic:
+The `scripts/review-batch.sh` script includes fallback logic:
 
 ```bash
+# Fallback chain: claude -> gemini -> copilot
 if [ "$rc" -eq 2 ] && [ "${REVIEW_ENGINE:-claude}" = "claude" ]; then
-  echo "Claude rate limit hit — switching to Copilot engine for remaining PRs"
+  export REVIEW_ENGINE=gemini
+  # ... retry this PR with gemini ...
+fi
+
+if [ "$rc" -eq 2 ] && [ "${REVIEW_ENGINE}" = "gemini" ]; then
   export REVIEW_ENGINE=copilot
-  bash scripts/review-one-pr.sh "$pr_url" || rc=$?
+  # ... retry this PR with copilot ...
 fi
 ```
 
-If Claude hits rate limits, the workflow switches to GitHub Copilot for remaining PRs in the batch. This ensures reviews continue even under high load.
+If Claude hits rate limits, the batch switches to Gemini, and then to GitHub Copilot if needed. This ensures reviews continue even under high load.
 
 ## Metrics and Monitoring
 
@@ -180,7 +185,7 @@ Key metrics tracked in workflow logs:
 - **Reviews posted:** Number of PRs actually approved
 - **No-ops skipped:** PRs already reviewed, not re-reviewed
 - **Failures:** PRs that had errors during review
-- **Engine fallbacks:** Times Claude rate limit triggered Copilot fallback
+- **Engine fallbacks**: Cumulative count and specific engines used (e.g., "gemini, copilot")
 
 View recent runs:
 ```bash
@@ -198,7 +203,7 @@ gh run view <run-id> --repo don-petry/pr-review-agent --log
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `REVIEW_ENGINE` | `claude` | Primary review engine |
+| `REVIEW_ENGINE` | `claude` | Primary review engine: `claude`, `gemini`, or `copilot` |
 | `DRY_RUN` | `true` | If true, don't post reviews |
 | `MAX_PRS` | `10` | Max reviews per run |
 | `CANDIDATE_LIMIT` | `100` | Max candidates scanned |
@@ -209,9 +214,10 @@ gh run view <run-id> --repo don-petry/pr-review-agent --log
 
 | Secret | Purpose |
 |--------|---------|
+| `DON_PETRY_BOT_GH_PAT` | Machine user PAT for GitHub API access (BOT_USER) |
+| `GH_PAT` | User PAT with Copilot subscription (fallback source) |
 | `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code authentication |
-| `DON_PETRY_BOT_PETRY_PROJECT_PAT` | Machine user PAT for GitHub API access |
-| `COPILOT_GITHUB_TOKEN` | GitHub Copilot fallback token |
+| `GOOGLE_API_KEY` | Gemini API authentication |
 
 ## File Structure
 
@@ -234,9 +240,9 @@ gh run view <run-id> --repo don-petry/pr-review-agent --log
 │   ├── synthesize.md              # Combine findings, make decision
 │   └── cascade-action.md          # Review coordination (legacy)
 │
-├── SETUP.md                       # Quick start guide
-├── MACHINE_USER_SETUP.md          # Machine user and PAT setup
-├── IMPLEMENTATION.md              # This file
+├── setup.md                       # Quick start guide
+├── machine-user-setup.md          # Machine user and PAT setup
+├── implementation.md              # This file
 └── README.md                       # Overview
 ```
 
