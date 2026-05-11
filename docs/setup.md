@@ -96,7 +96,7 @@ gh run list --repo don-petry/pr-review-agent -w pr-review.yml -L 5
 ## Troubleshooting
 
 ### Workflow fails: "Resource not accessible by integration"
-- Verify the `DON_PETRY_BOT_PETRY_PROJECT_PAT` secret is set and the token hasn't expired
+- Verify the `DON_PETRY_BOT_GH_PAT` secret is set and the token hasn't expired
 - Check the machine user has access to the target repos
 - Ensure the PAT has the required scopes (Contents: read, Pull requests: read/write, Checks: read)
 
@@ -112,7 +112,7 @@ gh run list --repo don-petry/pr-review-agent -w pr-review.yml -L 5
 
 ## Machine User Details
 
-The bot authenticates as a machine user account with a fine-grained PAT stored as the `DON_PETRY_BOT_PETRY_PROJECT_PAT` secret. The machine user is added to an org team listed in CODEOWNERS, so its approvals satisfy code owner review requirements.
+The bot authenticates as a machine user account with a fine-grained PAT stored as the `DON_PETRY_BOT_GH_PAT` secret. The machine user is added to an org team listed in CODEOWNERS, so its approvals satisfy code owner review requirements.
 
 For full setup instructions, see [MACHINE_USER_SETUP.md](machine-user-setup.md).
 
@@ -142,7 +142,7 @@ prompts/
 - **Fine-grained PAT** scoped to only the permissions needed (Contents: read, Pull requests: read/write, Checks: read)
 - **90-day expiry** on PAT — set a calendar reminder to rotate
 - **PAT** stored only in GitHub Secrets, never logged or committed
-- **Rotation** — generate a new PAT, update `DON_PETRY_BOT_PETRY_PROJECT_PAT` secret, revoke old token
+- **Rotation** — generate a new PAT, update `DON_PETRY_BOT_GH_PAT` secret, revoke old token
 
 ## Related Documentation
 

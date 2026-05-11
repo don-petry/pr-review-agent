@@ -45,13 +45,13 @@ Or use path-specific rules as needed.
 ## Step 4: Store the PAT as an Org Secret
 
 ```bash
-gh secret set DON_PETRY_BOT_PETRY_PROJECT_PAT --org petry-projects --body "<paste-token>"
+gh secret set DON_PETRY_BOT_GH_PAT --org petry-projects --body "<paste-token>"
 ```
 
 Or store at repo level if preferred:
 
 ```bash
-gh secret set DON_PETRY_BOT_PETRY_PROJECT_PAT --repo don-petry/pr-review-agent --body "<paste-token>"
+gh secret set DON_PETRY_BOT_GH_PAT --repo don-petry/pr-review-agent --body "<paste-token>"
 ```
 
 ### Verify the secret is set:
@@ -60,7 +60,7 @@ gh secret set DON_PETRY_BOT_PETRY_PROJECT_PAT --repo don-petry/pr-review-agent -
 gh secret list --repo don-petry/pr-review-agent
 ```
 
-Should show `DON_PETRY_BOT_PETRY_PROJECT_PAT` in the list.
+Should show `DON_PETRY_BOT_GH_PAT` in the list.
 
 ## Step 5: Test the Setup
 
@@ -92,7 +92,7 @@ Fine-grained PATs have a configurable expiry (90-day recommended). To rotate:
 
 1. Sign in as the machine user
 2. Generate a new fine-grained PAT with the same scopes
-3. Update the secret: `gh secret set DON_PETRY_BOT_PETRY_PROJECT_PAT --repo don-petry/pr-review-agent --body "<new-token>"`
+3. Update the secret: `gh secret set DON_PETRY_BOT_GH_PAT --repo don-petry/pr-review-agent --body "<new-token>"`
 4. Revoke the old token
 
 ## Trade-offs vs GitHub App
@@ -110,7 +110,7 @@ Fine-grained PATs have a configurable expiry (90-day recommended). To rotate:
 ### Issue: "Resource not accessible by integration"
 - Verify the PAT has the required scopes
 - Check the machine user has access to the target repos
-- Ensure `DON_PETRY_BOT_PETRY_PROJECT_PAT` secret is set correctly
+- Ensure `DON_PETRY_BOT_GH_PAT` secret is set correctly
 
 ### Issue: Approval doesn't satisfy code owner requirement
 - Verify the machine user is in the team listed in CODEOWNERS
@@ -118,7 +118,7 @@ Fine-grained PATs have a configurable expiry (90-day recommended). To rotate:
 - Ensure branch protection has `require_code_owner_review: true`
 
 ### Issue: Token expired
-- Generate a new fine-grained PAT and update the `DON_PETRY_BOT_PETRY_PROJECT_PAT` secret
+- Generate a new fine-grained PAT and update the `DON_PETRY_BOT_GH_PAT` secret
 
 ## References
 

@@ -25,7 +25,7 @@ This repository contains several documentation files describing the PR Review Ag
   - Stuck PR cleanup explained
 
 ## Setting Up Authentication
-- **[MACHINE_USER_setup.md](machine-user-setup.md)** — Machine user and PAT setup
+- **[machine-user-setup.md](machine-user-setup.md)** — Machine user and PAT setup
   - Create machine user account and org team
   - Configure CODEOWNERS for code owner approvals
   - Generate fine-grained PAT
@@ -65,7 +65,7 @@ docs/
 → Read [pr-review-agent.md](pr-review-agent.md)
 
 ### I need to set up the agent in a new organization
-→ Follow [MACHINE_USER_setup.md](machine-user-setup.md)
+→ Follow [machine-user-setup.md](machine-user-setup.md)
 
 ### The agent isn't working, help!
 → Check [setup.md#troubleshooting](setup.md#troubleshooting)
@@ -97,9 +97,9 @@ All secrets must be set in the repository (`Settings → Secrets and variables �
 
 | Secret | Purpose |
 |--------|---------|
-| `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code API access |
-| `DON_PETRY_BOT_PETRY_PROJECT_PAT` | Machine user fine-grained PAT |
-| `COPILOT_GITHUB_TOKEN` | Optional fallback engine |
+| `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code authentication |
+| `DON_PETRY_BOT_GH_PAT` | Machine user fine-grained PAT |
+| `GH_PAT` | User PAT with Copilot subscription |
 
 ## Review Workflow
 
@@ -123,7 +123,7 @@ All secrets must be set in the repository (`Settings → Secrets and variables �
 
 - **Workflow failing to authenticate**: Check [setup.md#troubleshooting](setup.md#troubleshooting)
 - **Questions about design**: See [implementation.md](implementation.md)
-- **Setup instructions**: Follow [MACHINE_USER_setup.md](machine-user-setup.md)
+- **Setup instructions**: Follow [machine-user-setup.md](machine-user-setup.md)
 - **Agent capabilities**: Read [pr-review-agent.md](pr-review-agent.md)
 
 ## Document Maintenance
@@ -134,4 +134,4 @@ These documents are kept in sync with the actual implementation. When updating t
 3. Ensure setup.md reflects current state
 4. Update implementation.md if architecture changes
 
-Last updated: April 26, 2026
+Last updated: May 11, 2026
