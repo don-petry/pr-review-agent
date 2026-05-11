@@ -6,8 +6,9 @@
 #
 # Env:
 #   GH_TOKEN              — set by the workflow
-#   REVIEW_ENGINE         — "claude" or "copilot" (default: claude)
+#   REVIEW_ENGINE         — "claude", "gemini", or "copilot" (default: claude)
 #   CLAUDE_CODE_OAUTH_TOKEN — (claude engine) set by the workflow
+#   GOOGLE_API_KEY          — (gemini engine) set by the workflow
 #   COPILOT_GITHUB_TOKEN    — (copilot engine) set by the workflow
 #   DRY_RUN               — "true" or "false"
 #
@@ -160,7 +161,7 @@ This PR has been through $REVIEW_CYCLE automated review cycles (cap: $MAX_CYCLES
 
 Please take a look manually, or close this PR if it's no longer needed. Once a human review resolves the situation, remove the \`needs-human-review\` label and the cascade can be re-engaged on the next push.
 
-_Posted by the ${BOT_USER:-don-petry-bot} PR-review cascade._
+_Posted by the ${BOT_USER:-donpetry-bot} PR-review cascade._
 ESCALATION_END
     gh pr comment "$PR_URL" --body-file "$ESCALATION_BODY" || echo "    warn: gh pr comment failed — escalation marker not posted; will retry next cycle"
     gh pr edit "$PR_URL" --add-label needs-human-review 2>/dev/null || true
