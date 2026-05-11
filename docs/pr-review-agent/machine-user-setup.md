@@ -62,6 +62,11 @@ gh secret list --repo petry-projects/.github-private
 
 Should show `DON_PETRY_BOT_GH_PAT` in the list.
 
+### Secret naming reference
+
+- `DON_PETRY_BOT_GH_PAT` — machine user / bot reviewer PAT. `.github/workflows/pr-review.yml`, `.github/workflows/repair-pr-approvals.yml`, `.github/workflows/daily-pr-review-health.yml`, and `.github/workflows/claude.yml` use this secret for GitHub API authentication.
+- `GH_PAT` — user PAT with a Copilot subscription. `.github/workflows/pr-review.yml` exposes it as `COPILOT_GITHUB_TOKEN` for Copilot CLI access; do **not** store the bot reviewer PAT in this secret.
+
 ## Step 5: Test the Setup
 
 ```bash
