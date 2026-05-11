@@ -1,0 +1,43 @@
+# AGENTS.md — .github-private
+
+This repository follows the organization-wide development standards defined in
+[`petry-projects/.github/AGENTS.md`](https://github.com/petry-projects/.github/blob/main/AGENTS.md).
+Read that file before making changes that touch CI, agent configuration, repo settings, or labels.
+
+---
+
+## Repository Context
+
+This is the `.github-private` org infrastructure repo for `petry-projects`. It contains:
+
+- **`agents/`** — Copilot custom agent profiles (org-wide, invocable from GitHub.com, VS Code, JetBrains)
+- **`frameworks/`** — Agentic frameworks installed via `git subtree` (bmad-method, spec-kit, gsd)
+- **`scripts/`** — Shell orchestration for GitHub Actions
+- **`.github/workflows/`** — Scheduled automation (PR review, health checks)
+
+## Project-Specific Standards
+
+### Workflow Files
+
+- Do **not** modify `.github/workflows/claude.yml` or `.github/workflows/agent-shield.yml` —
+  these are exempted from agent modification per
+  [`standards/agent-standards.md`](https://github.com/petry-projects/.github/blob/main/standards/agent-standards.md).
+- All other workflow changes must use templates from
+  [`standards/workflows/`](https://github.com/petry-projects/.github/tree/main/standards/workflows) verbatim.
+
+### Agent Profiles (`agents/*.md`)
+
+- Every agent profile must have YAML frontmatter with `name`, `description`, and `tools`.
+- Agent names must be kebab-case and match the filename.
+- Profiles are org-wide — changes affect all `petry-projects` repos.
+
+### Framework Subtrees (`frameworks/`)
+
+- The `frameworks/` directories are managed via `git subtree`. Do not edit them directly unless
+  applying local overrides that cannot be upstreamed.
+- To update a framework, use `git subtree pull` against the upstream remote.
+
+### Scripts (`scripts/`)
+
+- Scripts must be POSIX-compatible shell (`#!/usr/bin/env bash` with `set -euo pipefail`).
+- No hardcoded tokens or secrets — use `$GITHUB_TOKEN` from the environment.
