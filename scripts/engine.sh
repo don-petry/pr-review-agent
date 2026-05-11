@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # Engine abstraction layer for LLM invocations.
 # Supports: claude, gemini, copilot
 #
