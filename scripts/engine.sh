@@ -135,7 +135,7 @@ run_triage() {
         # gh copilot is now a built-in; auth via GH_PAT (user token with Copilot subscription).
         # Model selection is not supported by gh copilot suggest — uses Copilot's default.
         ( export GH_TOKEN="$COPILOT_GITHUB_TOKEN"
-          timeout "$TRIAGE_TIMEOUT_SEC" gh copilot suggest "$(cat "$prompt_file")" --agent shell
+          timeout "$TRIAGE_TIMEOUT_SEC" gh copilot suggest -p "$(cat "$prompt_file")"
         ) || rc=$?
         ;;
     esac
@@ -185,7 +185,7 @@ run_agentic() {
       # gh copilot is now a built-in; auth via GH_PAT (user token with Copilot subscription).
       # Model selection is not supported by gh copilot suggest — uses Copilot's default.
       ( export GH_TOKEN="$COPILOT_GITHUB_TOKEN"
-        timeout "$DEEP_TIMEOUT_SEC" gh copilot suggest "$(cat "$prompt_file")" --agent shell
+        timeout "$DEEP_TIMEOUT_SEC" gh copilot suggest -p "$(cat "$prompt_file")"
       )
       ;;
   esac
@@ -257,7 +257,7 @@ run_duck() {
       unset GOOGLE_API_KEY 2>/dev/null || true
       # gh copilot is now a built-in; auth via GH_PAT (user token with Copilot subscription).
       ( export GH_TOKEN="$COPILOT_GITHUB_TOKEN"
-        timeout "$DUCK_TIMEOUT_SEC" gh copilot suggest "$(cat "$prompt_file")" --agent shell
+        timeout "$DUCK_TIMEOUT_SEC" gh copilot suggest -p "$(cat "$prompt_file")"
       )
       ;;
     *)
