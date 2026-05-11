@@ -79,17 +79,14 @@ export DUCK_ENGINE DUCK_MODEL
 echo "    engine: $REVIEW_ENGINE ($ENGINE_LABEL)"
 
 # is_rate_limited <text>
-# Returns 0 (true) if the text looks like a provider usage/rate-limit block.
-# Covers three distinct failure modes that all warrant an engine fallback:
-#   1. API-level rate limits (429, "too many requests", per-minute quotas)
-#   2. Subscription/billing caps ("usage limit", "out of tokens", plan limits,
-#      Claude Code's "you've exceeded your Claude AI usage" messages, HTTP 402)
-#   3. Service overload that acts like a hard block (529)
+# Returns 0 (true) if the text looks like a provider usage/rate-limit block —
+# API-level (429), subscription/billing caps (plan limit, out of tokens, HTTP 402),
+# or service overload acting as a hard block (529).
 # review-one-pr.sh exits with code 2 when this fires so the caller can switch engines.
 is_rate_limited() {
   local text="$1"
   echo "$text" | grep -qiE \
-    "(hit your limit|rate[ -]?limit|resets [0-9]+(am|pm)|usage limit|quota exceeded|too many requests|exceeded.*quota|([^0-9]|^)429([^0-9]|$)|exhausted|out of.*token|token.*exhaust|claude.*usage|usage.*claude|plan.*limit|subscription.*limit|billing.*limit|daily.*limit|monthly.*limit|([^0-9]|^)402([^0-9]|$)|([^0-9]|^)529([^0-9]|$))"
+    "(hit your limit|rate[ -]?limit|resets [0-9]+(am|pm)|usage limit|quota exceeded|too many requests|exceeded.*quota|([^0-9]|^)429([^0-9]|$)|exhausted|out of.*token|token.*exhaust|plan.*limit|subscription.*limit|billing.*limit|([^0-9]|^)402([^0-9]|$)|([^0-9]|^)529([^0-9]|$))"
 }
 
 # is_transient_failure <exit_code>
