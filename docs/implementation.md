@@ -26,7 +26,7 @@ env:
   GH_TOKEN: ${{ secrets.DON_PETRY_BOT_PETRY_PROJECT_PAT }}
 ```
 
-The PAT is a fine-grained token scoped to the `petry-projects` organization with 90-day expiry. See [MACHINE_USER_SETUP.md](MACHINE_USER_SETUP.md) for rotation instructions.
+The PAT is a fine-grained token scoped to the `petry-projects` organization with 90-day expiry. See [MACHINE_USER_SETUP.md](machine-user-setup.md) for rotation instructions.
 
 ## PR Enumeration
 
@@ -240,9 +240,9 @@ gh run view <run-id> --repo don-petry/pr-review-agent --log
 │   ├── synthesize.md              # Combine findings, make decision
 │   └── cascade-action.md          # Review coordination (legacy)
 │
-├── SETUP.md                       # Quick start guide
-├── MACHINE_USER_SETUP.md          # Machine user and PAT setup
-├── IMPLEMENTATION.md              # This file
+├── setup.md                       # Quick start guide
+├── machine-user-setup.md          # Machine user and PAT setup
+├── implementation.md              # This file
 └── README.md                       # Overview
 ```
 

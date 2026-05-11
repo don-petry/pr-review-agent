@@ -18,11 +18,11 @@
 
 ### 2. Comprehensive Documentation ✅
 Created in repository:
-- **SETUP.md** — Quick reference guide with configuration, secrets, commands, troubleshooting
-- **IMPLEMENTATION.md** — Technical deep dive: architecture, design decisions, stuck PR cleanup
-- **DOCUMENTATION.md** — Index linking all documentation
+- **setup.md** — Quick reference guide with configuration, secrets, commands, troubleshooting
+- **implementation.md** — Technical deep dive: architecture, design decisions, stuck PR cleanup
+- **documentation-index.md** — Index linking all documentation
 - **Updated README.md** — Status badge and quick links
-- **MACHINE_USER_SETUP.md** — Machine user account and PAT setup instructions
+- **machine-user-setup.md** — Machine user account and PAT setup instructions
 
 ### 3. Stuck PR Cleanup ✅ (Approvals Posted)
 Fixed 24 stuck PRs across three repositories:
@@ -131,17 +131,17 @@ gh workflow run fix-stuck-prs.yml --repo don-petry/pr-review-agent -f dry_run=fa
 
 1. **Auto-merge requires repo settings**: Auto-merge must be enabled in each repo's settings for `gh pr merge --auto` to work.
 
-2. **PAT rotation**: Machine user PATs expire (90-day recommended). Set a calendar reminder to rotate. See [MACHINE_USER_SETUP.md](MACHINE_USER_SETUP.md).
+2. **PAT rotation**: Machine user PATs expire (90-day recommended). Set a calendar reminder to rotate. See [MACHINE_USER_SETUP.md](machine-user-setup.md).
 
 ## Support & Troubleshooting
 
-See **[SETUP.md](SETUP.md)** for:
+See **[SETUP.md](setup.md)** for:
 - Permission errors and fixes
 - Authentication issues
 - Workflow failures
 - Rate limiting and fallback engines
 
-See **[IMPLEMENTATION.md](IMPLEMENTATION.md)** for:
+See **[IMPLEMENTATION.md](implementation.md)** for:
 - Architecture details
 - Design rationale
 - How each component works

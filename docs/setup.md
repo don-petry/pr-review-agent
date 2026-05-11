@@ -114,7 +114,7 @@ gh run list --repo don-petry/pr-review-agent -w pr-review.yml -L 5
 
 The bot authenticates as a machine user account with a fine-grained PAT stored as the `DON_PETRY_BOT_PETRY_PROJECT_PAT` secret. The machine user is added to an org team listed in CODEOWNERS, so its approvals satisfy code owner review requirements.
 
-For full setup instructions, see [MACHINE_USER_SETUP.md](MACHINE_USER_SETUP.md).
+For full setup instructions, see [MACHINE_USER_SETUP.md](machine-user-setup.md).
 
 ## Architecture
 
@@ -146,5 +146,5 @@ prompts/
 
 ## Related Documentation
 
-- [AGENT.md](AGENT.md) — Full agent capabilities and design
-- [MACHINE_USER_SETUP.md](MACHINE_USER_SETUP.md) — Machine user creation, PAT setup, and rotation
+- [AGENT.md](pr-review-agent.md) — Full agent capabilities and design
+- [MACHINE_USER_SETUP.md](machine-user-setup.md) — Machine user creation, PAT setup, and rotation

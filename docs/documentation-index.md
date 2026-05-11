@@ -3,20 +3,20 @@
 This repository contains several documentation files describing the PR Review Agent system. Start here to understand which document you need.
 
 ## Quick Start
-- **[SETUP.md](SETUP.md)** ⭐ Start here!
+- **[setup.md](setup.md)** ⭐ Start here!
   - Quick reference for configuration and usage
   - Lists required secrets and variables
   - Shows how to run manually or check logs
   - Includes troubleshooting for common issues
 
 ## Understanding the System
-- **[AGENT.md](AGENT.md)** — Full system documentation
+- **[pr-review-agent.md](pr-review-agent.md)** — Full system documentation
   - Architecture and design philosophy
   - How PR reviews are performed
   - Agent capabilities and limitations
   - Configuration options
 
-- **[IMPLEMENTATION.md](IMPLEMENTATION.md)** — Technical deep dive
+- **[implementation.md](implementation.md)** — Technical deep dive
   - Authentication: machine user with PAT
   - How PR enumeration works
   - Review pipeline architecture
@@ -25,7 +25,7 @@ This repository contains several documentation files describing the PR Review Ag
   - Stuck PR cleanup explained
 
 ## Setting Up Authentication
-- **[MACHINE_USER_SETUP.md](MACHINE_USER_SETUP.md)** — Machine user and PAT setup
+- **[MACHINE_USER_setup.md](machine-user-setup.md)** — Machine user and PAT setup
   - Create machine user account and org team
   - Configure CODEOWNERS for code owner approvals
   - Generate fine-grained PAT
@@ -52,32 +52,32 @@ prompts/
 └── synthesize.md           # Final verdict
 
 docs/
-├── SETUP.md                # Quick start (read first)
-├── AGENT.md                # Full documentation
-├── IMPLEMENTATION.md       # Technical details
-├── MACHINE_USER_SETUP.md   # Machine user and PAT setup
-└── DOCUMENTATION.md        # This file
+├── setup.md                # Quick start (read first)
+├── pr-review-agent.md                # Full documentation
+├── implementation.md       # Technical details
+├── machine-user-setup.md   # Machine user and PAT setup
+└── documentation-index.md        # This file
 ```
 
 ## Common Tasks
 
 ### I want to understand what this agent does
-→ Read [AGENT.md](AGENT.md)
+→ Read [pr-review-agent.md](pr-review-agent.md)
 
 ### I need to set up the agent in a new organization
-→ Follow [MACHINE_USER_SETUP.md](MACHINE_USER_SETUP.md)
+→ Follow [MACHINE_USER_setup.md](machine-user-setup.md)
 
 ### The agent isn't working, help!
-→ Check [SETUP.md#troubleshooting](SETUP.md#troubleshooting)
+→ Check [setup.md#troubleshooting](setup.md#troubleshooting)
 
 ### I want to understand the architecture
-→ Read [IMPLEMENTATION.md](IMPLEMENTATION.md)
+→ Read [implementation.md](implementation.md)
 
 ### I need to update configuration
-→ See [SETUP.md#repository-variables](SETUP.md#repository-variables)
+→ See [setup.md#repository-variables](setup.md#repository-variables)
 
 ### I want to run a manual review
-→ See [SETUP.md#running-manually](SETUP.md#running-manually)
+→ See [setup.md#running-manually](setup.md#running-manually)
 
 ## Authentication Method
 
@@ -121,17 +121,17 @@ All secrets must be set in the repository (`Settings → Secrets and variables �
 
 ## Support and Troubleshooting
 
-- **Workflow failing to authenticate**: Check [SETUP.md#troubleshooting](SETUP.md#troubleshooting)
-- **Questions about design**: See [IMPLEMENTATION.md](IMPLEMENTATION.md)
-- **Setup instructions**: Follow [MACHINE_USER_SETUP.md](MACHINE_USER_SETUP.md)
-- **Agent capabilities**: Read [AGENT.md](AGENT.md)
+- **Workflow failing to authenticate**: Check [setup.md#troubleshooting](setup.md#troubleshooting)
+- **Questions about design**: See [implementation.md](implementation.md)
+- **Setup instructions**: Follow [MACHINE_USER_setup.md](machine-user-setup.md)
+- **Agent capabilities**: Read [pr-review-agent.md](pr-review-agent.md)
 
 ## Document Maintenance
 
 These documents are kept in sync with the actual implementation. When updating the system:
 1. Update the relevant scripts/workflows
 2. Update the corresponding documentation
-3. Ensure SETUP.md reflects current state
-4. Update IMPLEMENTATION.md if architecture changes
+3. Ensure setup.md reflects current state
+4. Update implementation.md if architecture changes
 
 Last updated: April 26, 2026
