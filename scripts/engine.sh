@@ -32,14 +32,14 @@ case "$REVIEW_ENGINE" in
   claude)
     ENGINE_TRIAGE_MODEL="claude-haiku-4-5-20251001"
     ENGINE_DEEP_MODEL="claude-sonnet-4-6"
-    ENGINE_AUDIT_MODEL="claude-opus-4-6"
+    ENGINE_AUDIT_MODEL="claude-opus-4-7"
     ENGINE_ACTION_MODEL="claude-sonnet-4-6"
-    ENGINE_SINGLE_MODEL="claude-opus-4-6"
-    ENGINE_LABEL="triage: haiku 4.5 → deep: sonnet 4.6 + duck: gpt-5.4 → audit: opus 4.6"
-    ENGINE_SINGLE_LABEL="single-reviewer mode: opus 4.6"
+    ENGINE_SINGLE_MODEL="claude-opus-4-7"
+    ENGINE_LABEL="triage: haiku 4.5 → deep: sonnet 4.6 + duck: o4 → audit: opus 4.7"
+    ENGINE_SINGLE_LABEL="single-reviewer mode: opus 4.7"
     # Cross-engine rubber duck: always the opposite engine
     DUCK_ENGINE="copilot"
-    DUCK_MODEL="gpt-5.4"
+    DUCK_MODEL="o4"
     ;;
   gemini)
     ENGINE_TRIAGE_MODEL="gemini-2.0-flash"
