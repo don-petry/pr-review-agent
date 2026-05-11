@@ -54,6 +54,18 @@ case "$REVIEW_ENGINE" in
     DUCK_ENGINE="claude"
     DUCK_MODEL="claude-sonnet-4-6"
     ;;
+  gemini)
+    ENGINE_TRIAGE_MODEL="gemini-2.0-flash"
+    ENGINE_DEEP_MODEL="gemini-1.5-pro"
+    ENGINE_AUDIT_MODEL="gemini-1.5-pro"
+    ENGINE_ACTION_MODEL="gemini-1.5-pro"
+    ENGINE_SINGLE_MODEL="gemini-1.5-pro"
+    ENGINE_LABEL="triage: gemini-2.0-flash → deep: gemini-1.5-pro + duck: sonnet 4.6 → audit: gemini-1.5-pro"
+    ENGINE_SINGLE_LABEL="single-reviewer mode: gemini-1.5-pro"
+    # Cross-engine rubber duck: use Claude for diversity
+    DUCK_ENGINE="claude"
+    DUCK_MODEL="claude-sonnet-4-6"
+    ;;
   copilot)
     ENGINE_TRIAGE_MODEL="o4-mini"
     ENGINE_DEEP_MODEL="o4-mini"
