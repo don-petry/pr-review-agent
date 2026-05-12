@@ -64,6 +64,7 @@ case "$REVIEW_ENGINE" in
     # https://models.github.ai (see GitHub Models marketplace).
     # Override via COPILOT_API_MODEL env var if the default is unavailable.
     COPILOT_API_MODEL="${COPILOT_API_MODEL:-openai/o4-mini}"
+    export COPILOT_API_MODEL
     ENGINE_LABEL="triage: o4-mini → deep: o4-mini + duck: sonnet 4.6 → audit: o4-mini (GitHub Models API)"
     ENGINE_SINGLE_LABEL="single-reviewer mode: o4-mini (GitHub Models API)"
     # Cross-engine rubber duck: always the opposite engine
@@ -80,7 +81,7 @@ export ENGINE_TRIAGE_MODEL ENGINE_DEEP_MODEL ENGINE_AUDIT_MODEL
 export ENGINE_ACTION_MODEL ENGINE_SINGLE_MODEL
 export ENGINE_LABEL ENGINE_SINGLE_LABEL
 export DUCK_ENGINE DUCK_MODEL
-export COPILOT_API_MODEL
+# COPILOT_API_MODEL is exported inside the copilot) case above (only set then).
 
 echo "    engine: $REVIEW_ENGINE ($ENGINE_LABEL)"
 
