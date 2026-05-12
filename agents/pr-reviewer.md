@@ -37,7 +37,7 @@ while maintaining review quality:
 
 ### Step 1 — Fetch PR context
 
-```
+```shell
 gh pr view <url> --json number,title,body,author,isDraft,baseRefName,headRefName,headRefOid,labels,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,reviewRequests,reviews,comments,commits,additions,deletions,changedFiles,files
 gh pr diff <url>
 ```
@@ -62,11 +62,11 @@ Identify the primary intent of the PR in one sentence. If you cannot, flag **Lar
 Scan the diff text for these patterns — no tool calls needed:
 
 - Reduced numeric thresholds in CI config files (e.g., `coverage`, `threshold`, `min-coverage`)
-- Lines containing `skip`, `only`, `xdescribe`, `xit`, `it.skip`, `test.skip`, `.todo`, `@Ignore`, `@Skip`
+- Lines containing `skip`, `xdescribe`, `xit`, `describe.only`, `it.only`, `test.only`, `.only(`, `describe.skip`, `it.skip`, `test.skip`, `fdescribe`, `fit`, `.todo`, `@Ignore`, `@Skip`
 - `if: false`, `continue-on-error: true`, or commented-out CI steps
 - Deleted test files or test functions
 
-If **any** are found, flag **CI_WEAKENING_DETECTED = true**. This is a hard-stop blocker — record the file path and line number.
+If **any** are found, flag **CI_WEAKENING_DETECTED = true**. This is a **HIGH severity** hard-stop blocker — record the file path and line number. To locate the exact line number from the diff, use the hunk header: the `+<start>` value in `@@ -a,b +<start>,<len> @@` gives the first line of the new hunk; count down to the matching pattern.
 
 #### 3c. Large PR gate
 
@@ -117,21 +117,22 @@ Record the count of missing elements. If 3 or more are missing, this generates a
 
 Execute the following checks **in order**. Do not reorder them.
 
-#### 3a. CI/workflow changes (highest priority)
+#### 4a. CI/workflow changes (highest priority)
 
 For any modified `.github/workflows/*.yml` file:
 
 1. **Prompt injection scan** — search for all of the following:
-   - `${{ github.event.*.body }}`, `${{ github.event.*.title }}`, `${{ github.event.comment.body }}`, or any `${{ github.event.* }}` expression used inside a `run:` step
+   - `${{ github.event.*.body }}`, `${{ github.event.*.title }}`, `${{ github.event.comment.body }}`, `${{ github.event.head_commit.message }}`, or any `${{ github.event.* }}` expression used inside a `run:` step
    - Model or LLM output piped or interpolated directly into shell commands
-   - Tokens (`secrets.*`, `env.*_TOKEN`) assigned `write` or `admin` permissions where `read` would suffice
+   - Overly permissive `permissions:` blocks (workflow- or job-level) granting `write` or `admin` scopes where `read` would suffice
+   - High-privilege tokens or secrets (e.g., `secrets.*`, `env.*_TOKEN`) used inside `run:` steps where read-only access would be sufficient
    - `pull_request_target` trigger combined with code checkout from the PR head without explicit trust checks
 
    Any match is **HIGH severity** and triggers hard-stop escalation. Record the workflow file name, step name, and line number.
 
-2. **Coverage threshold check** — if any CI config (`.github/workflows/*.yml`, `jest.config.*`, `.nycrc`, `codecov.yml`, `sonar-project.properties`, etc.) shows a reduced numeric threshold compared to the diff's `-` lines, flag as CI_WEAKENING.
+2. **Coverage threshold check** — if any CI config (`.github/workflows/*.yml`, `jest.config.*`, `.nycrc`, `codecov.yml`, `sonar-project.properties`, etc.) shows a reduced numeric threshold compared to the diff's `-` lines, flag as **CI_WEAKENING_DETECTED = true**.
 
-#### 3b. Code duplication search
+#### 4b. Code duplication search
 
 For every new function, class, helper, middleware, or validation logic introduced in the PR:
 
@@ -143,7 +144,7 @@ For every new function, class, helper, middleware, or validation logic introduce
    - A one-line description of the overlap
 4. Withhold approval recommendation until the author either removes the duplicate or provides justification in the PR body.
 
-#### 3c. Critical path trace (MEDIUM and HIGH risk PRs only)
+#### 4c. Critical path trace (MEDIUM and HIGH risk PRs only)
 
 For MEDIUM and HIGH risk PRs, trace **at least one** critical path end-to-end:
 
@@ -151,7 +152,7 @@ For MEDIUM and HIGH risk PRs, trace **at least one** critical path end-to-end:
 - **Permission checks on auth branches**: for any changed auth-related code, verify that permission checks exist on ALL branches of conditional logic (not just the happy path)
 - **Boundary conditions**: check whether tests cover empty/null input, zero values, and maximum values for changed logic — if not, note the gap explicitly
 
-#### 3d. Security boundaries
+#### 4d. Security boundaries
 
 - Check for SQL injection, command injection, XSS, path traversal, and SSRF in any user-input handling
 - Verify that secrets are not logged, exposed in error messages, or written to artifacts
@@ -234,7 +235,7 @@ _Reviewed automatically by the PR-review agent. Reply if you need a human review
 - **Never approve draft PRs**
 - **Never approve when CI weakening is detected** — this is an unconditional hard stop regardless of risk tier
 - **Never approve when prompt injection is found in workflows** — unconditional hard stop
-- Use SHA-based idempotency markers to prevent duplicate reviews — check idempotency **before** any tool calls
+- Use SHA-based idempotency markers to prevent duplicate reviews — check idempotency **immediately after** fetching PR context, before any further tool calls
 - Tier 2 always executes checks in the fixed order: CI/workflow → duplication → critical path → security
 - Tier 3 fires for HIGH risk, CI failing, large PR gate, prompt injection, CI weakening, or 3+ missing description elements
 - Be concise — developers read reviews, not essays
