@@ -21,6 +21,67 @@ PRS_FILE="${PRS_FILE:-prs.txt}"
 MAX_PRS="${MAX_PRS:-10}"
 CANDIDATE_LIMIT="${CANDIDATE_LIMIT:-100}"
 
+# ---------------------------------------------------------------------------
+# Pre-flight smoke test for the Copilot engine.
+#
+# gh copilot suggest is a shell-command suggestion tool that does not accept
+# large prompts or the -p flag in modern gh CLI versions (see issue #147).
+# We now use the GitHub Models REST API directly. This pre-flight step verifies
+# API connectivity and auth BEFORE reviewing any PRs, so format/auth errors
+# surface as a clear setup failure rather than being mis-classified as
+# rate-limit hits mid-run (which caused session aborts skipping many PRs).
+# ---------------------------------------------------------------------------
+if [ "${REVIEW_ENGINE:-claude}" = "copilot" ]; then
+  SCRIPT_DIR_BATCH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  echo "==> Copilot engine pre-flight: testing GitHub Models API"
+
+  # Determine the configured API model (set by engine.sh; fall back to a
+  # known-available model for the connectivity check itself).
+  # shellcheck source=engine.sh
+  _smoke_model="${COPILOT_API_MODEL:-}"
+  if [ -z "$_smoke_model" ]; then
+    # Source engine.sh to get COPILOT_API_MODEL without running any reviews.
+    # Redirect stdout to discard the "    engine: ..." echo from engine.sh.
+    source "$SCRIPT_DIR_BATCH/engine.sh" > /dev/null 2>&1 || true
+    _smoke_model="${COPILOT_API_MODEL:-openai/o4-mini}"
+  fi
+
+  _smoke_rc=0
+  _smoke_raw=$(
+    timeout 30 curl -sSL \
+      -H "Authorization: Bearer ${COPILOT_GITHUB_TOKEN:?COPILOT_GITHUB_TOKEN not set for copilot engine}" \
+      -H "Content-Type: application/json" \
+      -H "X-GitHub-Api-Version: 2022-11-28" \
+      https://models.github.ai/inference/chat/completions \
+      --data-binary "{\"model\":\"${_smoke_model}\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with the single word: ready\"}],\"max_tokens\":5,\"temperature\":0}" \
+      -w '\n%{http_code}'
+  ) || _smoke_rc=$?
+
+  if [ "$_smoke_rc" -ne 0 ]; then
+    echo "::error::Copilot pre-flight failed: curl exited $_smoke_rc — check COPILOT_GITHUB_TOKEN and network connectivity"
+    exit 1
+  fi
+
+  _smoke_http=$(printf '%s' "$_smoke_raw" | tail -n 1)
+  _smoke_body=$(printf '%s' "$_smoke_raw" | head -n -1)
+
+  if [ "$_smoke_http" -ge 400 ]; then
+    echo "::error::Copilot pre-flight failed: GitHub Models API returned HTTP $_smoke_http for model '${_smoke_model}'"
+    echo "  Response: $_smoke_body"
+    echo "  Check COPILOT_GITHUB_TOKEN permissions and that model '${_smoke_model}' is available."
+    echo "  Override the model via the COPILOT_API_MODEL env var if needed."
+    exit 1
+  fi
+
+  _smoke_text=$(printf '%s' "$_smoke_body" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+print(d.get('choices', [{}])[0].get('message', {}).get('content', '(empty)'))
+" 2>/dev/null || echo "(parse failed)")
+  echo "::notice::Copilot pre-flight passed — model=${_smoke_model} response='${_smoke_text}'"
+  unset _smoke_model _smoke_rc _smoke_raw _smoke_http _smoke_body _smoke_text
+fi
+
 if [ ! -s "$PRS_FILE" ]; then
   echo "::notice::No candidate PRs to review."
   exit 0
