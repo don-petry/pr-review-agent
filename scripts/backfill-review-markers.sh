@@ -88,7 +88,7 @@ for PR_URL in "$@"; do
     RISK=$(echo "$OLD_BODY" | grep -oE 'risk=[A-Z]+' | head -1 | cut -d= -f2 || true)
     RISK="${RISK:-MEDIUM}"
 
-    MARKER="<!-- pr-review-agent v1 sha=${HEAD_SHA} decision=fix-requested risk=${RISK} -->"
+    MARKER="<!-- pr-review-agent v1 sha=${HEAD_SHA} --> <!-- decision=fix-requested risk=${RISK} -->"
     NEW_BODY="${MARKER}"$'\n\n'"${OLD_BODY}"
 
     echo "  comment $CID: prepending marker (risk=$RISK)"
