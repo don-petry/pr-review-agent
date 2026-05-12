@@ -316,10 +316,38 @@ if [ "$TRIAGE_ESCALATE" = "false" ]; then
   echo "    [approve] triage cleared — running single confirmation ($ENGINE_SINGLE_MODEL)"
   export REVIEW_MODE="triage-approved"
   VERDICT_JSON="/tmp/cascade/single-review-verdict.json"
-  OUTPUT_FILE="$VERDICT_JSON"
-  export OUTPUT_FILE
-  run_agentic prompts/single-review.md "$ENGINE_SINGLE_MODEL" > "$VERDICT_JSON.raw"
-  extract_verdict_json "$VERDICT_JSON.raw" "$VERDICT_JSON" || { echo "::error::single-review did not produce valid JSON"; exit 1; }
+  SINGLE_REVIEW_MAX_RETRIES="${SINGLE_REVIEW_MAX_RETRIES:-2}"
+  SINGLE_REVIEW_RETRY_DELAY_SEC="${SINGLE_REVIEW_RETRY_DELAY_SEC:-15}"
+
+  single_attempt=1
+  single_ok=false
+  while [ "$single_attempt" -le "$SINGLE_REVIEW_MAX_RETRIES" ]; do
+    rm -f "$VERDICT_JSON" "$VERDICT_JSON.raw"
+    OUTPUT_FILE="$VERDICT_JSON"
+    export OUTPUT_FILE
+    if run_agentic prompts/single-review.md "$ENGINE_SINGLE_MODEL" \
+         > "$VERDICT_JSON.raw" 2>"/tmp/cascade/single-review.log" \
+       && extract_verdict_json "$VERDICT_JSON.raw" "$VERDICT_JSON"; then
+      single_ok=true
+      break
+    fi
+    echo "    [approve] single-review attempt $single_attempt/$SINGLE_REVIEW_MAX_RETRIES produced no valid JSON"
+    head -20 "$VERDICT_JSON.raw" 2>/dev/null || true
+    if [ "$single_attempt" -lt "$SINGLE_REVIEW_MAX_RETRIES" ]; then
+      echo "    [approve] retrying in ${SINGLE_REVIEW_RETRY_DELAY_SEC}s"
+      sleep "$SINGLE_REVIEW_RETRY_DELAY_SEC"
+    fi
+    single_attempt=$((single_attempt + 1))
+  done
+
+  if [ "$single_ok" = "false" ]; then
+    echo "::warning::single-review failed after $SINGLE_REVIEW_MAX_RETRIES attempts — flagging for manual review"
+    [ -s "/tmp/cascade/single-review.log" ] && cat "/tmp/cascade/single-review.log"
+    if [ "${DRY_RUN:-false}" = "false" ]; then
+      gh pr edit "$PR_URL" --add-label needs-human-review 2>/dev/null || true
+    fi
+    exit 1
+  fi
   rm -f "$VERDICT_JSON.raw"
 
   # Post the review using the verdict
