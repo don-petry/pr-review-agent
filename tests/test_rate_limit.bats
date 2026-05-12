@@ -45,6 +45,27 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
+@test "is_rate_limited: 'service overloaded' returns true" {
+  run is_rate_limited "service overloaded, please retry"
+  [ "$status" -eq 0 ]
+}
+
+@test "is_rate_limited: 'overload error' returns true" {
+  run is_rate_limited "overload error: backend capacity exceeded"
+  [ "$status" -eq 0 ]
+}
+
+# Confirm function-overloading terminology does NOT trigger a false positive.
+@test "is_rate_limited: 'overloaded operator' returns false (code terminology)" {
+  run is_rate_limited "The class has an overloaded operator."
+  [ "$status" -eq 1 ]
+}
+
+@test "is_rate_limited: 'overloaded methods' returns false (code terminology)" {
+  run is_rate_limited "This library supports overloaded methods."
+  [ "$status" -eq 1 ]
+}
+
 @test "is_rate_limited: 'HTTP 529' returns true" {
   run is_rate_limited "HTTP 529"
   [ "$status" -eq 0 ]

@@ -92,7 +92,7 @@ echo "    engine: $REVIEW_ENGINE ($ENGINE_LABEL)"
 is_rate_limited() {
   local text="$1"
   echo "$text" | grep -qiE \
-    "(hit your limit|rate[ -]?limit|resets [0-9]+(am|pm)|usage limit|quota exceeded|too many requests|exceeded.*quota|([^0-9]|^)429([^0-9]|$)|out of.*token|token.*exhaust|overloaded|claude.*usage|usage.*claude|plan.*limit|subscription.*limit|billing.*limit|daily.*limit|monthly.*limit|([^0-9]|^)402([^0-9]|$)|([^0-9]|^)529([^0-9]|$))"
+    "(hit your limit|rate[ -]?limit|resets [0-9]+(am|pm)|usage limit|quota exceeded|too many requests|exceeded.*quota|([^0-9]|^)429([^0-9]|$)|out of.*token|token.*exhaust|overloaded_error|service.*overload|overload.*error|claude.*usage|usage.*claude|plan.*limit|subscription.*limit|billing.*limit|daily.*limit|monthly.*limit|([^0-9]|^)402([^0-9]|$)|([^0-9]|^)529([^0-9]|$))"
 }
 
 # is_cli_error <text>

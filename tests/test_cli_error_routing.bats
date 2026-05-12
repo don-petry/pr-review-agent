@@ -14,6 +14,12 @@ setup() {
 
 # Helper: emulates the error-routing block used at all three call sites in
 # review-one-pr.sh.  Returns the exit code that review-one-pr.sh would use.
+#
+# Note: the deep-review tier intentionally checks only stdout (not stderr) to
+# prevent PR diff content in log files from causing false positives.  This
+# helper checks both channels, which is accurate for the triage and
+# single-review tiers.  The deep-review tier's stdout-only behaviour is tested
+# separately via the is_rate_limited / is_cli_error unit tests.
 route_error() {
   local rc="$1"      # exit code from the CLI / model invocation
   local stdout="$2"  # captured stdout
