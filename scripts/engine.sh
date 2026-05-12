@@ -63,6 +63,8 @@ case "$REVIEW_ENGINE" in
     # GitHub Models API model identifier — must match a model available at
     # https://models.github.ai (see GitHub Models marketplace).
     # Override via COPILOT_API_MODEL env var if the default is unavailable.
+    # openai/o4-mini is the April-2025 o4-generation reasoning model; it is
+    # not a typo for o1-mini or gpt-4o-mini.
     COPILOT_API_MODEL="${COPILOT_API_MODEL:-openai/o4-mini}"
     export COPILOT_API_MODEL
     ENGINE_LABEL="triage: o4-mini → deep: o4-mini + duck: sonnet 4.6 → audit: o4-mini (GitHub Models API)"
@@ -131,11 +133,12 @@ copilot_chat() {
   local prompt_file="$1"
   local timeout_sec="${2:-300}"
 
-  # Build JSON payload via python3 — safely encodes arbitrary prompt text
-  # (special chars, newlines, quotes, Unicode, large files) without the
-  # ARG_MAX and shell-quoting issues of the old $(cat "$file") approach.
-  local body rc=0
-  body=$(python3 -c "
+  # Build JSON payload via python3 into a temp file — safely encodes arbitrary
+  # prompt text (special chars, newlines, quotes, Unicode, large files) and
+  # avoids ARG_MAX limits when passing large diffs to curl via --data-binary.
+  local _body_file rc=0
+  _body_file=$(mktemp) || { echo "copilot_chat: mktemp failed" >&2; return 1; }
+  python3 -c "
 import json, sys
 prompt = open(sys.argv[1]).read()
 model  = sys.argv[2]
@@ -144,7 +147,8 @@ sys.stdout.write(json.dumps({
     'messages': [{'role': 'user', 'content': prompt}],
     'temperature': 0,
 }))
-" "$prompt_file" "${COPILOT_API_MODEL:-openai/o4-mini}") || {
+" "$prompt_file" "${COPILOT_API_MODEL:-openai/o4-mini}" > "$_body_file" || {
+    rm -f "$_body_file"
     echo "copilot_chat: failed to build JSON payload from $prompt_file" >&2
     return 1
   }
@@ -154,13 +158,14 @@ sys.stdout.write(json.dumps({
   local raw
   raw=$(
     timeout "$timeout_sec" curl -sSL \
-      -H "Authorization: Bearer ${COPILOT_GITHUB_TOKEN}" \
+      -H "Authorization: Bearer ${COPILOT_GITHUB_TOKEN:?COPILOT_GITHUB_TOKEN is required for copilot engine}" \
       -H "Content-Type: application/json" \
       -H "X-GitHub-Api-Version: 2022-11-28" \
       https://models.github.ai/inference/chat/completions \
-      --data-binary "$body" \
+      --data-binary @"$_body_file" \
       -w '\n%{http_code}'
   ) || rc=$?
+  rm -f "$_body_file"
 
   if [ "$rc" -ne 0 ]; then
     echo "copilot_chat: curl exited $rc (timeout=${timeout_sec}s)" >&2
@@ -289,13 +294,12 @@ run_agentic() {
       ;;
     copilot)
       # Text-only completion via GitHub Models API (no tool use available).
-      # Output goes to stdout (captured by the caller's redirect); also written
-      # to $OUTPUT_FILE if set so callers that check that path directly find it.
-      local _cop_out
-      _cop_out=$(copilot_chat "$prompt_file" "$DEEP_TIMEOUT_SEC") || return $?
-      printf '%s\n' "$_cop_out"
+      # Stream directly to stdout; tee to OUTPUT_FILE when set.
       if [ -n "${OUTPUT_FILE:-}" ]; then
-        printf '%s\n' "$_cop_out" > "$OUTPUT_FILE"
+        copilot_chat "$prompt_file" "$DEEP_TIMEOUT_SEC" | tee "$OUTPUT_FILE"
+        return "${PIPESTATUS[0]}"
+      else
+        copilot_chat "$prompt_file" "$DEEP_TIMEOUT_SEC"
       fi
       ;;
   esac
@@ -365,11 +369,11 @@ run_duck() {
     copilot)
       unset CLAUDE_CODE_OAUTH_TOKEN 2>/dev/null || true
       unset GOOGLE_API_KEY 2>/dev/null || true
-      local _duck_out
-      _duck_out=$(copilot_chat "$prompt_file" "$DUCK_TIMEOUT_SEC") || return $?
-      printf '%s\n' "$_duck_out"
       if [ -n "${OUTPUT_FILE:-}" ]; then
-        printf '%s\n' "$_duck_out" > "$OUTPUT_FILE"
+        copilot_chat "$prompt_file" "$DUCK_TIMEOUT_SEC" | tee "$OUTPUT_FILE"
+        return "${PIPESTATUS[0]}"
+      else
+        copilot_chat "$prompt_file" "$DUCK_TIMEOUT_SEC"
       fi
       ;;
     *)

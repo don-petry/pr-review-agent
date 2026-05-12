@@ -42,9 +42,27 @@ if [ "${REVIEW_ENGINE:-claude}" = "copilot" ]; then
   if [ -z "$_smoke_model" ]; then
     # Source engine.sh to get COPILOT_API_MODEL without running any reviews.
     # Redirect stdout to discard the "    engine: ..." echo from engine.sh.
-    source "$SCRIPT_DIR_BATCH/engine.sh" > /dev/null 2>&1 || true
+    source "$SCRIPT_DIR_BATCH/engine.sh" > /dev/null || {
+      echo "::error::Copilot pre-flight: failed to source engine.sh — check REVIEW_ENGINE and file path" >&2
+      exit 1
+    }
     _smoke_model="${COPILOT_API_MODEL:-openai/o4-mini}"
   fi
+
+  _smoke_payload_file=$(mktemp) || { echo "::error::Copilot pre-flight: mktemp failed" >&2; exit 1; }
+  python3 -c "
+import json, sys
+sys.stdout.write(json.dumps({
+    'model': sys.argv[1],
+    'messages': [{'role': 'user', 'content': 'Reply with the single word: ready'}],
+    'max_tokens': 5,
+    'temperature': 0,
+}))
+" "$_smoke_model" > "$_smoke_payload_file" || {
+    rm -f "$_smoke_payload_file"
+    echo "::error::Copilot pre-flight: failed to build smoke-test JSON payload" >&2
+    exit 1
+  }
 
   _smoke_rc=0
   _smoke_raw=$(
@@ -53,9 +71,10 @@ if [ "${REVIEW_ENGINE:-claude}" = "copilot" ]; then
       -H "Content-Type: application/json" \
       -H "X-GitHub-Api-Version: 2022-11-28" \
       https://models.github.ai/inference/chat/completions \
-      --data-binary "{\"model\":\"${_smoke_model}\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with the single word: ready\"}],\"max_tokens\":5,\"temperature\":0}" \
+      --data-binary @"$_smoke_payload_file" \
       -w '\n%{http_code}'
   ) || _smoke_rc=$?
+  rm -f "$_smoke_payload_file"
 
   if [ "$_smoke_rc" -ne 0 ]; then
     echo "::error::Copilot pre-flight failed: curl exited $_smoke_rc — check COPILOT_GITHUB_TOKEN and network connectivity"
@@ -79,7 +98,7 @@ d = json.load(sys.stdin)
 print(d.get('choices', [{}])[0].get('message', {}).get('content', '(empty)'))
 " 2>/dev/null || echo "(parse failed)")
   echo "::notice::Copilot pre-flight passed — model=${_smoke_model} response='${_smoke_text}'"
-  unset _smoke_model _smoke_rc _smoke_raw _smoke_http _smoke_body _smoke_text
+  unset _smoke_model _smoke_payload_file _smoke_rc _smoke_raw _smoke_http _smoke_body _smoke_text
 fi
 
 if [ ! -s "$PRS_FILE" ]; then
