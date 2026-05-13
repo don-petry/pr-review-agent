@@ -21,28 +21,28 @@ PRS_FILE="${PRS_FILE:-prs.txt}"
 MAX_PRS="${MAX_PRS:-10}"
 CANDIDATE_LIMIT="${CANDIDATE_LIMIT:-100}"
 
+# Pre-flight: validate engine availability before touching any PR.
+# Sets CLAUDE_AVAILABLE, GEMINI_AVAILABLE, COPILOT_AVAILABLE and emits
+# ::warning:: annotations + job-summary table for any unavailable engine.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=validate-engines.sh
+source "$SCRIPT_DIR/validate-engines.sh"
+validate_engines
+
 # ---------------------------------------------------------------------------
-# Pre-flight smoke test for the Copilot engine.
+# Copilot REST API smoke test (only when Copilot is the primary engine).
 #
-# gh copilot suggest is a shell-command suggestion tool that does not accept
-# large prompts or the -p flag in modern gh CLI versions (see issue #147).
-# We now use the GitHub Models REST API directly. This pre-flight step verifies
-# API connectivity and auth BEFORE reviewing any PRs, so format/auth errors
-# surface as a clear setup failure rather than being mis-classified as
-# rate-limit hits mid-run (which caused session aborts skipping many PRs).
+# Verifies GitHub Models API connectivity and auth BEFORE reviewing any PRs,
+# so format/auth errors surface as a clear setup failure rather than being
+# mis-classified as rate-limit hits mid-run.
 # ---------------------------------------------------------------------------
 if [ "${REVIEW_ENGINE:-claude}" = "copilot" ]; then
-  SCRIPT_DIR_BATCH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   echo "==> Copilot engine pre-flight: testing GitHub Models API"
 
-  # Determine the configured API model (set by engine.sh; fall back to a
-  # known-available model for the connectivity check itself).
-  # shellcheck source=engine.sh
   _smoke_model="${COPILOT_API_MODEL:-}"
   if [ -z "$_smoke_model" ]; then
-    # Source engine.sh to get COPILOT_API_MODEL without running any reviews.
-    # Redirect stdout to discard the "    engine: ..." echo from engine.sh.
-    source "$SCRIPT_DIR_BATCH/engine.sh" > /dev/null || {
+    # shellcheck source=engine.sh
+    source "$SCRIPT_DIR/engine.sh" > /dev/null || {
       echo "::error::Copilot pre-flight: failed to source engine.sh — check REVIEW_ENGINE and file path" >&2
       exit 1
     }
@@ -137,7 +137,8 @@ while IFS= read -r pr_url; do
   # Exit code 2 = engine rate-limited.
   # Fallback chain: claude -> gemini -> copilot
   if [ "$rc" -eq 2 ] && [ "${REVIEW_ENGINE:-claude}" = "claude" ]; then
-    if command -v gemini >/dev/null 2>&1 && [ -n "${GOOGLE_API_KEY:-}" ]; then
+    # Use the availability flag set by validate_engines() at startup.
+    if [ "${GEMINI_AVAILABLE:-false}" = "true" ]; then
       echo "::warning::Claude rate limit hit — switching to Gemini engine for remaining PRs"
       export REVIEW_ENGINE=gemini
       engine_fallbacks=$((engine_fallbacks + 1))
@@ -145,7 +146,11 @@ while IFS= read -r pr_url; do
       rc=0
       bash scripts/review-one-pr.sh "$pr_url" || rc=$?
     else
-      echo "::warning::Claude rate limit hit but Gemini fallback unavailable (CLI not installed or GOOGLE_API_KEY missing) — falling through to Copilot"
+      # Derive the specific reason so the warning is actionable without docs.
+      _gemini_miss=""
+      command -v gemini >/dev/null 2>&1 || _gemini_miss="Gemini CLI not installed (fix: npm install -g @google/gemini-cli)"
+      [ -n "${GOOGLE_API_KEY:-}" ] || _gemini_miss="${_gemini_miss:+$_gemini_miss; }GOOGLE_API_KEY secret not set"
+      echo "::warning::Claude rate limit hit but Gemini fallback unavailable (${_gemini_miss}) — falling through to Copilot"
       rc=2
       export REVIEW_ENGINE=gemini # Set to gemini so the next block catches it
     fi
