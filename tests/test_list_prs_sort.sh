@@ -17,16 +17,16 @@ ok()   { PASS=$((PASS + 1)); printf 'PASS  %s\n' "$1"; }
 fail() { FAIL=$((FAIL + 1)); ERRORS="${ERRORS}FAIL  $1: $2\n"; printf 'FAIL  %s: %s\n' "$1" "$2"; }
 
 # ---------------------------------------------------------------------------
-# The sort pipeline — matches list-prs.sh exactly.
+# The sort pipeline — mirrors list-prs.sh (here-string input, || true for empty sets).
 # Input: newline-separated  priority|createdAt|url  lines
 # Output: sorted URLs only
 # ---------------------------------------------------------------------------
 sort_entries() {
-  printf '%s\n' "$1" \
-    | grep -v '^$' \
+  grep -v '^$' <<< "$1" \
     | sort -t'|' -k3 -u \
     | sort -t'|' -k1,1n -k2,2 \
-    | cut -d'|' -f3-
+    | cut -d'|' -f3- \
+    || true
 }
 
 # ---------------------------------------------------------------------------
@@ -38,7 +38,7 @@ classify() {
   local bot="${1:-donpetry-bot}"
   local json="$2"
   echo "$json" | jq -r ".[] | select(.author.login != \"$bot\") |
-    (if (.url | test(\"[.]github(-private)?/pull/\")) then \"0\" else \"1\" end)
+    (if (.url | test(\"/[.]github(-private)?/pull/\")) then \"0\" else \"1\" end)
       + \"|\" + .createdAt + \"|\" + .url"
 }
 

@@ -50,7 +50,7 @@ all_entries=""
 # ISO-8601 createdAt sorts lexicographically, so oldest-first within each
 # tier is achieved with a plain string sort on field 2.
 JQ_WITH_SORT=".[] | select(.author.login != \"$BOT_USER\") |
-  (if (.url | test(\"[.]github(-private)?/pull/\")) then \"0\" else \"1\" end)
+  (if (.url | test(\"/[.]github(-private)?/pull/\")) then \"0\" else \"1\" end)
     + \"|\" + .createdAt + \"|\" + .url"
 
 # Get all repos in bot's personal account and search each
@@ -82,8 +82,7 @@ done < <(gh repo list "$TARGET_ORG" --json nameWithOwner --jq '.[].nameWithOwner
 # 2. Deduplicate by URL (field 3) keeping first occurrence
 # 3. Sort: priority (field 1) ascending, then createdAt (field 2) ascending
 # 4. Strip the sort keys — output only the URL
-printf '%s\n' "$all_entries" \
-  | grep -v '^$' \
+grep -v '^$' <<< "$all_entries" \
   | sort -t'|' -k3 -u \
   | sort -t'|' -k1,1n -k2,2 \
   | cut -d'|' -f3- \
