@@ -2,8 +2,10 @@
 # Integration test: CLI format errors must route to per-PR failure (exit 1),
 # NOT to session abort / engine fallback (exit 2).
 #
-# This tests the error-routing logic that review-one-pr.sh applies at every
-# tier (triage, single-review, deep review) when the CLI exits non-zero.
+# This tests the error-routing logic that review-one-pr.sh applies at the
+# triage and single-review tiers (both check stdout + stderr).  The deep-review
+# tier intentionally inspects stdout only and is covered by the unit tests in
+# test_rate_limit.bats via the is_rate_limited / is_cli_error functions.
 #
 # Run with: bats tests/test_cli_error_routing.bats
 
