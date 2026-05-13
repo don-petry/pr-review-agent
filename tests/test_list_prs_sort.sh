@@ -134,6 +134,18 @@ else
   fail "sort: duplicate URLs deduplicated" "got $COUNT lines"
 fi
 
+# Test 7: Same URL appearing with conflicting priorities — only one URL in output
+# (Shouldn't happen in practice, but the sort-by-URL dedup must still collapse it
+# to a single entry rather than letting both through.)
+INPUT="0|2026-01-01T00:00:00Z|https://github.com/org/app/pull/1
+1|2026-01-01T00:00:00Z|https://github.com/org/app/pull/1"
+COUNT=$(sort_entries "$INPUT" | grep -c .)
+if [ "$COUNT" -eq 1 ]; then
+  ok "sort: same URL with conflicting priorities deduplicated to one entry"
+else
+  fail "sort: same URL with conflicting priorities deduplicated to one entry" "got $COUNT lines"
+fi
+
 # ===========================================================================
 # JQ priority classifier tests (requires jq)
 # ===========================================================================
