@@ -92,10 +92,37 @@ echo "    engine: $REVIEW_ENGINE ($ENGINE_LABEL)"
 # API-level (429), subscription/billing caps (plan limit, out of tokens, HTTP 402),
 # or service overload acting as a hard block (529).
 # review-one-pr.sh exits with code 2 when this fires so the caller can switch engines.
+#
+# Patterns intentionally excluded to prevent false positives:
+#   - bare "exhausted" (too broad: matches "retry attempts exhausted", OS errors, etc.)
+#     Retained as "token.*exhaust" / "out of.*token" for the specific token-depletion case.
+#   - CLI syntax errors ("Invalid command format", "unknown flag", etc.) — see is_cli_error.
 is_rate_limited() {
   local text="$1"
-  echo "$text" | grep -qiE \
-    "(hit your limit|rate[ -]?limit|resets [0-9]+(am|pm)|usage limit|quota exceeded|too many requests|exceeded.*quota|([^0-9]|^)429([^0-9]|$)|exhausted|out of.*token|token.*exhaust|claude.*usage|usage.*claude|plan.*limit|subscription.*limit|billing.*limit|daily.*limit|monthly.*limit|([^0-9]|^)402([^0-9]|$)|([^0-9]|^)529([^0-9]|$))"
+  # Build pattern in segments for readability — one category per line.
+  local _pat
+  _pat="hit your limit|rate[ -]?limit|resets [0-9]+(am|pm)"           # soft cap / throttle
+  _pat="$_pat|usage limit|quota exceeded|too many requests|exceeded.*quota"
+  _pat="$_pat|([^0-9]|^)429([^0-9]|$)"                               # HTTP 429
+  _pat="$_pat|out of.*token|token.*exhaust"                            # token depletion
+  _pat="$_pat|overloaded_error|service.*overload|overload.*error"      # service overload
+  _pat="$_pat|([^0-9]|^)529([^0-9]|$)"                               # HTTP 529
+  _pat="$_pat|claude.*usage|usage.*claude"                             # Claude-specific cap
+  _pat="$_pat|plan.*limit|subscription.*limit|billing.*limit|daily.*limit|monthly.*limit"
+  _pat="$_pat|([^0-9]|^)402([^0-9]|$)"                               # HTTP 402 (payment)
+  printf '%s\n' "$text" | grep -qiE "($_pat)"
+}
+
+# is_cli_error <text>
+# Returns 0 (true) if the text looks like a CLI invocation error —
+# bad flags, wrong syntax, or a missing command.
+# These are NOT rate limits: callers must exit with code 1 (per-PR failure),
+# NOT code 2 (rate-limit / engine fallback), so the session can continue
+# processing the remaining PR queue rather than aborting entirely.
+is_cli_error() {
+  local text="$1"
+  printf '%s\n' "$text" | grep -qiE \
+    "(invalid command format|invalid (flag|argument|option|command)|unknown (flag|command|option|argument)|command not found|no such command|did you mean:|unrecognized (command|flag|argument|option)|bad (flag|argument|option))"
 }
 
 # is_transient_failure <exit_code>
