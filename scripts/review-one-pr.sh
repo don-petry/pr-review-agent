@@ -265,16 +265,24 @@ TRIAGE_RESULT=$(
 # subprocess forks (jq, claude) from hitting E2BIG on hundreds-of-KB diffs.
 unset PR_DIFF PR_METADATA
 
-# Detect rate limit before JSON validation — check both stdout and stderr,
-# then exit 2 so the caller can fall back to a different engine rather than
-# burning through the remaining PR queue.
+# Detect error category before JSON validation.
 # Claude Code writes its usage-cap error to stdout (captured in TRIAGE_RESULT);
 # some other providers write to stderr (TRIAGE_LOG) — check both channels.
 TRIAGE_STDERR=$(cat "$TRIAGE_LOG" 2>/dev/null || true)
-if [ "$TRIAGE_RC" -ne 0 ] && (is_rate_limited "$TRIAGE_RESULT" || is_rate_limited "$TRIAGE_STDERR"); then
-  echo "    [tier1] usage/rate limit detected — exiting with code 2 for engine fallback"
-  echo "    limit message: ${TRIAGE_RESULT:-}${TRIAGE_STDERR:+ (stderr: $TRIAGE_STDERR)}"
-  exit 2
+if [ "$TRIAGE_RC" -ne 0 ]; then
+  # CLI invocation errors (bad flags, wrong syntax) are per-PR failures — exit 1
+  # so the session can continue with the next PR rather than aborting entirely.
+  if is_cli_error "$TRIAGE_RESULT" || is_cli_error "$TRIAGE_STDERR"; then
+    echo "    [error] CLI format error — treating as per-PR failure (not a rate limit)"
+    echo "    error message: ${TRIAGE_RESULT:-}${TRIAGE_STDERR:+ (stderr: $TRIAGE_STDERR)}"
+    exit 1
+  fi
+  # Rate-limit / overload — exit 2 so the caller can fall back to a different engine.
+  if is_rate_limited "$TRIAGE_RESULT" || is_rate_limited "$TRIAGE_STDERR"; then
+    echo "    [tier1] usage/rate limit detected — exiting with code 2 for engine fallback"
+    echo "    limit message: ${TRIAGE_RESULT:-}${TRIAGE_STDERR:+ (stderr: $TRIAGE_STDERR)}"
+    exit 2
+  fi
 fi
 
 # Hard-fail on triage process exit. Previously this silently synthesized a
@@ -331,14 +339,23 @@ if [ "$TRIAGE_ESCALATE" = "false" ]; then
     run_agentic prompts/single-review.md "$ENGINE_SINGLE_MODEL" \
       > "$VERDICT_JSON.raw" 2>"$SINGLE_LOG" || single_rc=$?
 
-    # Check for rate limit before retrying — exit code 2 lets review-batch.sh
-    # trigger engine fallback rather than burning retries on the same engine.
+    # Check error category on failure only — guards against false positives from
+    # reviewed PR content that happens to mention rate-limit keywords.
     SINGLE_STDOUT=$(cat "$VERDICT_JSON.raw" 2>/dev/null || true)
     SINGLE_STDERR=$(cat "$SINGLE_LOG" 2>/dev/null || true)
-    if is_rate_limited "$SINGLE_STDOUT" || is_rate_limited "$SINGLE_STDERR"; then
-      echo "    [approve] rate limit detected — exiting with code 2 for engine fallback"
-      [ -n "$SINGLE_STDERR" ] && echo "    limit stderr: $SINGLE_STDERR"
-      exit 2
+    if [ "$single_rc" -ne 0 ]; then
+      # CLI invocation errors are per-PR failures (exit 1), not engine fallbacks (exit 2).
+      if is_cli_error "$SINGLE_STDOUT" || is_cli_error "$SINGLE_STDERR"; then
+        echo "    [error] CLI format error — treating as per-PR failure (not a rate limit)"
+        [ -n "$SINGLE_STDERR" ] && echo "    error stderr: $SINGLE_STDERR"
+        exit 1
+      fi
+      # Rate-limit / overload — exit code 2 lets review-batch.sh trigger engine fallback.
+      if is_rate_limited "$SINGLE_STDOUT" || is_rate_limited "$SINGLE_STDERR"; then
+        echo "    [approve] rate limit detected — exiting with code 2 for engine fallback"
+        [ -n "$SINGLE_STDERR" ] && echo "    limit stderr: $SINGLE_STDERR"
+        exit 2
+      fi
     fi
 
     if [ "$single_rc" -eq 0 ] && extract_verdict_json "$VERDICT_JSON.raw" "$VERDICT_JSON"; then
@@ -402,12 +419,19 @@ wait $DEEP_PID || true
 # Validate primary deep review (required)
 OUTPUT_FILE="/tmp/cascade/deep.json"
 if [ ! -s "$OUTPUT_FILE" ] || ! jq empty "$OUTPUT_FILE" 2>/dev/null; then
-  # Check the model's stdout for a rate-limit message.  We intentionally do NOT
-  # check deep.log (stderr/process noise) to avoid false positives from PR diff
-  # content that happens to mention rate-limiting in code or comments.
+  # Check the model's stdout for a rate-limit or CLI-error message.  We
+  # intentionally do NOT check deep.log (stderr/process noise) to avoid false
+  # positives from PR diff content that happens to mention these keywords in
+  # code or comments.
   DEEP_STDOUT_CONTENT=$(cat /tmp/cascade/deep-stdout.txt 2>/dev/null || true)
   kill $DUCK_PID 2>/dev/null || true
   wait $DUCK_PID 2>/dev/null || true
+  # CLI invocation errors are per-PR failures (exit 1), not engine fallbacks (exit 2).
+  if is_cli_error "$DEEP_STDOUT_CONTENT"; then
+    echo "    [error] CLI format error — treating as per-PR failure (not a rate limit)"
+    echo "$DEEP_STDOUT_CONTENT"
+    exit 1
+  fi
   if is_rate_limited "$DEEP_STDOUT_CONTENT"; then
     echo "    [tier2] rate limit detected — exiting with code 2 for engine fallback"
     echo "$DEEP_STDOUT_CONTENT"
