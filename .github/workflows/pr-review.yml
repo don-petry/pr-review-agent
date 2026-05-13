@@ -2,8 +2,14 @@ name: PR Review Agent
 
 on:
   schedule:
-    # Every 15 min to ensure at least one fires per hour
-    # (GitHub Actions scheduled runs can be delayed/skipped under load)
+    # Strategy: four staggered offsets per hour to improve the reliability of
+    # getting at least one scheduled run per clock-hour. GitHub Actions scheduled
+    # workflows are frequently delayed or skipped under load. The shared concurrency
+    # group (pr-review-scheduled) serializes runs so at most one executes at a time;
+    # additional triggers queue rather than overlap. Queued runs are cheap to no-op:
+    # the per-PR idempotency check (head-SHA comparison) skips any PR already
+    # reviewed since the last push, so back-to-back queued runs won't produce
+    # duplicate reviews.
     - cron: "7 * * * *"
     - cron: "22 * * * *"
     - cron: "37 * * * *"
