@@ -56,7 +56,7 @@ jobs:
           if command -v claude >/dev/null 2>&1; then
             echo "claude-code cache hit: $(claude --version)"
           else
-            npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+            npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" # NOSONAR — install scripts required for native binary setup; version intentionally uses CLAUDE_CODE_VERSION var (same pattern as pr-review.yml)
           fi
 
       - name: Run health check
