@@ -35,7 +35,11 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Install bats
         run: |
-          npm install -g bats bats-support bats-assert
+          # Install bats-core to user-local prefix to avoid root requirement
+          mkdir -p "$HOME/.local/bin" "$HOME/.local/lib"
+          git clone --depth 1 https://github.com/bats-core/bats-core.git /tmp/bats-core
+          bash /tmp/bats-core/install.sh "$HOME/.local"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Run unit tests (if exist)
         run: |
           if ls tests/dev-lead/unit/*.bats 2>/dev/null; then
