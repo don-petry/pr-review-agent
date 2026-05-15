@@ -2,8 +2,18 @@ name: PR Review Agent
 
 on:
   schedule:
-    # Hourly at :07 to avoid the top-of-hour cron stampede
+    # Strategy: four staggered offsets per hour to improve the reliability of
+    # getting at least one scheduled run per clock-hour. GitHub Actions scheduled
+    # workflows are frequently delayed or skipped under load. The shared concurrency
+    # group (pr-review-scheduled) serializes runs so at most one executes at a time;
+    # additional triggers queue rather than overlap. Queued runs are cheap to no-op:
+    # the per-PR idempotency check (head-SHA comparison) skips any PR already
+    # reviewed since the last push, so back-to-back queued runs won't produce
+    # duplicate reviews.
     - cron: "7 * * * *"
+    - cron: "22 * * * *"
+    - cron: "37 * * * *"
+    - cron: "52 * * * *"
   workflow_dispatch:
     inputs:
       pr_url:
@@ -58,8 +68,10 @@ jobs:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
       # Copilot engine reuses GH_PAT (a separate user PAT with Copilot subscription).
       COPILOT_GITHUB_TOKEN: ${{ secrets.GH_PAT }}
-      # Gemini engine auth — requires GOOGLE_API_KEY repo secret.
+      # Gemini engine auth — GOOGLE_API_KEY is the secret name; newer Gemini CLI
+      # versions expect GEMINI_API_KEY so we expose the same value under both names.
       GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
       # Default to dry-run. workflow_dispatch can override; repository_dispatch
       # (mention) always runs live; vars.LIVE_MODE=true switches scheduled runs live.
       DRY_RUN: ${{ github.event_name == 'repository_dispatch' && 'false' || inputs.dry_run || (vars.LIVE_MODE == 'true' && 'false' || 'true') }}
@@ -67,7 +79,7 @@ jobs:
       DELEGATION_ORGS: ${{ vars.DELEGATION_ORGS || vars.CLAUDE_ORGS || '' }}
       MAX_REVIEW_CYCLES: ${{ vars.MAX_REVIEW_CYCLES || '3' }}
       MAX_PRS: ${{ vars.MAX_PRS || '10' }}
-      CANDIDATE_LIMIT: ${{ vars.CANDIDATE_LIMIT || '100' }}
+      CANDIDATE_LIMIT: ${{ vars.CANDIDATE_LIMIT || '250' }}
       # Pin via vars.CLAUDE_CODE_VERSION for fully reproducible caching; default
       # 'latest' caches an install indefinitely under that key — flush via the
       # Actions cache UI or bump the variable to pick up new releases.
@@ -77,10 +89,10 @@ jobs:
 
     steps:
       - name: Checkout agent repo
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Cache claude-code CLI
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.npm-global
           key: claude-code-${{ env.CLAUDE_CODE_VERSION }}-${{ runner.os }}
