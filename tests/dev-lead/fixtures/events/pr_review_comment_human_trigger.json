@@ -1,0 +1,31 @@
+{
+  "_test_expected_intent": "human",
+  "action": "created",
+  "comment": {
+    "id": 2002,
+    "body": "@dev-lead fix this - the regex pattern here is wrong and will fail on edge cases",
+    "path": "src/validators/email.js",
+    "line": 15,
+    "user": {
+      "login": "donpetry",
+      "type": "User"
+    }
+  },
+  "pull_request": {
+    "number": 59,
+    "title": "feat: input validation",
+    "state": "open",
+    "author_association": "OWNER",
+    "head": {
+      "sha": "iii999jjj000",
+      "ref": "feat/validation",
+      "repo": { "full_name": "petry-projects/.github-private" }
+    },
+    "base": {
+      "ref": "main",
+      "repo": { "full_name": "petry-projects/.github-private" }
+    }
+  },
+  "repository": { "full_name": "petry-projects/.github-private" },
+  "sender": { "login": "donpetry", "type": "User" }
+}

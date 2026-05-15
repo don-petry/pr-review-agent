@@ -1,0 +1,25 @@
+{
+  "_test_expected_intent": "fix-ci",
+  "action": "dev-lead-ci-failure",
+  "client_payload": {
+    "pr_number": 42,
+    "head_sha": "abc123def456",
+    "repo": "petry-projects/.github-private",
+    "checks": [
+      {
+        "name": "lint / eslint",
+        "conclusion": "failure",
+        "details_url": "https://github.com/petry-projects/.github-private/actions/runs/12345",
+        "app_slug": "github-actions"
+      },
+      {
+        "name": "test / unit",
+        "conclusion": "failure",
+        "details_url": "https://github.com/petry-projects/.github-private/actions/runs/12346",
+        "app_slug": "github-actions"
+      }
+    ]
+  },
+  "repository": { "full_name": "petry-projects/.github-private" },
+  "sender": { "login": "github-actions[bot]", "type": "Bot" }
+}

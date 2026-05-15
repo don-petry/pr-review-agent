@@ -1,0 +1,173 @@
+#!/usr/bin/env bats
+# Unit tests for dev-lead-intent.sh (Phase 1 stub)
+
+SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/../../.." && pwd)"
+INTENT_SCRIPT="$SCRIPT_DIR/scripts/dev-lead-intent.sh"
+FIXTURES_DIR="$SCRIPT_DIR/tests/dev-lead/fixtures/events"
+
+setup() {
+  # Create a temp GITHUB_ENV and GITHUB_OUTPUT file for each test
+  export GITHUB_ENV="$(mktemp)"
+  export GITHUB_OUTPUT="$(mktemp)"
+  export BOT_USER="donpetry-bot"
+}
+
+teardown() {
+  rm -f "$GITHUB_ENV" "$GITHUB_OUTPUT"
+}
+
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+_get_env() {
+  local key="$1"
+  grep "^${key}=" "$GITHUB_ENV" | cut -d= -f2- | head -1
+}
+
+_get_output() {
+  local key="$1"
+  grep "^${key}=" "$GITHUB_OUTPUT" | cut -d= -f2- | head -1
+}
+
+# ── tests ────────────────────────────────────────────────────────────────────
+
+@test "stub: unknown event emits skip" {
+  export GITHUB_EVENT_NAME="push"
+  export GITHUB_EVENT_PATH="/dev/null"
+
+  run bash "$INTENT_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  [ "$(_get_env INTENT_TYPE)" = "skip" ]
+}
+
+@test "stub: unknown event reason is not-implemented" {
+  export GITHUB_EVENT_NAME="workflow_dispatch"
+  export GITHUB_EVENT_PATH="/dev/null"
+
+  run bash "$INTENT_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  [ "$(_get_env INTENT_REASON)" = "not-implemented" ]
+}
+
+@test "stub: pull_request opened emits skip (not-implemented in Phase 1)" {
+  export GITHUB_EVENT_NAME="pull_request"
+  export GITHUB_EVENT_PATH="$FIXTURES_DIR/pr_opened_human.json"
+
+  run bash "$INTENT_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  [ "$(_get_env INTENT_TYPE)" = "skip" ]
+}
+
+@test "anti-loop: pull_request synchronize from BOT_USER emits skip" {
+  export GITHUB_EVENT_NAME="pull_request"
+  export GITHUB_EVENT_PATH="$FIXTURES_DIR/pr_sync_dev_lead_commit.json"
+  export BOT_USER="donpetry-bot"
+
+  run bash "$INTENT_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  [ "$(_get_env INTENT_TYPE)" = "skip" ]
+  [ "$(_get_env INTENT_REASON)" = "dev-lead-own-commit" ]
+}
+
+@test "anti-loop: pull_request synchronize from different user does not trigger anti-loop skip with not-implemented" {
+  # A sync from a human should still be skip in Phase 1 (not-implemented)
+  # but should NOT have reason dev-lead-own-commit
+  export GITHUB_EVENT_NAME="pull_request"
+  export GITHUB_EVENT_PATH="$FIXTURES_DIR/pr_opened_human.json"
+  export BOT_USER="donpetry-bot"
+
+  run bash "$INTENT_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  [ "$(_get_env INTENT_TYPE)" = "skip" ]
+  [ "$(_get_env INTENT_REASON)" != "dev-lead-own-commit" ]
+}
+
+@test "check_run event emits skip with check-run-handled-by-ci-relay" {
+  export GITHUB_EVENT_NAME="check_run"
+  export GITHUB_EVENT_PATH="$FIXTURES_DIR/check_run_failure.json"
+
+  run bash "$INTENT_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  [ "$(_get_env INTENT_TYPE)" = "skip" ]
+  [ "$(_get_env INTENT_REASON)" = "check-run-handled-by-ci-relay" ]
+}
+
+@test "issue_comment event emits skip (not-implemented in Phase 1)" {
+  export GITHUB_EVENT_NAME="issue_comment"
+  export GITHUB_EVENT_PATH="$FIXTURES_DIR/issue_comment_human_trigger.json"
+
+  run bash "$INTENT_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  [ "$(_get_env INTENT_TYPE)" = "skip" ]
+}
+
+@test "issues labeled event emits skip (not-implemented in Phase 1)" {
+  export GITHUB_EVENT_NAME="issues"
+  export GITHUB_EVENT_PATH="$FIXTURES_DIR/issues_labeled_dev_lead.json"
+
+  run bash "$INTENT_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  [ "$(_get_env INTENT_TYPE)" = "skip" ]
+}
+
+@test "repository_dispatch event emits skip (not-implemented in Phase 1)" {
+  export GITHUB_EVENT_NAME="repository_dispatch"
+  export GITHUB_EVENT_PATH="$FIXTURES_DIR/repository_dispatch_ci_failure.json"
+
+  run bash "$INTENT_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  [ "$(_get_env INTENT_TYPE)" = "skip" ]
+}
+
+@test "INTENT_TYPE is written to both GITHUB_ENV and GITHUB_OUTPUT" {
+  export GITHUB_EVENT_NAME="push"
+  export GITHUB_EVENT_PATH="/dev/null"
+
+  run bash "$INTENT_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  [ "$(_get_env INTENT_TYPE)" = "skip" ]
+  [ "$(_get_output intent_type)" = "skip" ]
+}
+
+@test "missing GITHUB_EVENT_NAME exits 1" {
+  unset GITHUB_EVENT_NAME || true
+  export GITHUB_EVENT_PATH="/dev/null"
+
+  run bash "$INTENT_SCRIPT"
+
+  [ "$status" -ne 0 ]
+}
+
+@test "pre-flight: missing CLAUDE_CODE_OAUTH_TOKEN exits 1" {
+  unset CLAUDE_CODE_OAUTH_TOKEN || true
+
+  run bash "$SCRIPT_DIR/scripts/dev-lead-preflight.sh"
+
+  [ "$status" -eq 1 ]
+}
+
+@test "pre-flight: with CLAUDE_CODE_OAUTH_TOKEN set exits 0" {
+  export CLAUDE_CODE_OAUTH_TOKEN="test-token-value"
+
+  run bash "$SCRIPT_DIR/scripts/dev-lead-preflight.sh"
+
+  [ "$status" -eq 0 ]
+}
+
+@test "dry-run: DEV_LEAD_DRY_RUN=true is logged by preflight" {
+  export CLAUDE_CODE_OAUTH_TOKEN="test-token-value"
+  export DEV_LEAD_DRY_RUN="true"
+
+  run bash "$SCRIPT_DIR/scripts/dev-lead-preflight.sh"
+
+  [ "$status" -eq 0 ]
+}

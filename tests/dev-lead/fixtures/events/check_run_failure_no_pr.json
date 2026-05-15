@@ -1,0 +1,14 @@
+{
+  "_test_expected_intent": "skip",
+  "action": "completed",
+  "check_run": {
+    "name": "lint / eslint",
+    "conclusion": "failure",
+    "head_sha": "abc123def456",
+    "details_url": "https://github.com/petry-projects/.github-private/actions/runs/12346",
+    "app": { "slug": "github-actions" },
+    "pull_requests": []
+  },
+  "repository": { "full_name": "petry-projects/.github-private" },
+  "sender": { "login": "donpetry", "type": "User" }
+}

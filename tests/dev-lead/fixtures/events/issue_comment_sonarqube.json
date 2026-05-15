@@ -1,0 +1,22 @@
+{
+  "_test_expected_intent": "fix-bot-comment",
+  "action": "created",
+  "issue": {
+    "number": 61,
+    "title": "feat: security improvements",
+    "state": "open",
+    "pull_request": {
+      "url": "https://api.github.com/repos/petry-projects/.github-private/pulls/61"
+    }
+  },
+  "comment": {
+    "id": 3001,
+    "body": "SonarQube analysis found 3 new issues:\n- Critical: SQL injection vulnerability in line 42\n- Major: Unused variable in line 15\n- Minor: Missing documentation",
+    "user": {
+      "login": "sonarqubecloud[bot]",
+      "type": "Bot"
+    }
+  },
+  "repository": { "full_name": "petry-projects/.github-private" },
+  "sender": { "login": "sonarqubecloud[bot]", "type": "Bot" }
+}

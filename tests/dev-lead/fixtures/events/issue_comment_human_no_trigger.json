@@ -1,0 +1,23 @@
+{
+  "_test_expected_intent": "skip",
+  "action": "created",
+  "issue": {
+    "number": 64,
+    "title": "feat: minor improvements",
+    "state": "open",
+    "author_association": "OWNER",
+    "pull_request": {
+      "url": "https://api.github.com/repos/petry-projects/.github-private/pulls/64"
+    }
+  },
+  "comment": {
+    "id": 3004,
+    "body": "This looks good to me. I'll merge after the CI passes.",
+    "user": {
+      "login": "donpetry",
+      "type": "User"
+    }
+  },
+  "repository": { "full_name": "petry-projects/.github-private" },
+  "sender": { "login": "donpetry", "type": "User" }
+}

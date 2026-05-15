@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Configurable via: STUB_ENGINE_RESPONSE, STUB_ENGINE_EXIT, STUB_ENGINE_DELAY
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --prompt|--model|--approval-mode|--output-format)
+      shift; shift ;;
+    *) shift ;;
+  esac
+done
+sleep "${STUB_ENGINE_DELAY:-0}"
+printf '%s\n' "${STUB_ENGINE_RESPONSE:-stub engine response}"
+exit "${STUB_ENGINE_EXIT:-0}"

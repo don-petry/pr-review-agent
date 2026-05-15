@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Mock gh binary for testing. Configurable via environment variables.
+# GH_STUB_PR_NUMBER, GH_STUB_PR_HEAD_REPO, GH_STUB_COMMENT_BODY,
+# GH_STUB_CI_STATUS, GH_STUB_DISPATCH_CALLED
+
+ARGS="$*"
+case "$ARGS" in
+  *dispatches*)
+    echo "true" > "${GH_STUB_DISPATCH_FILE:-/tmp/gh_stub_dispatch_called}"
+    echo "{}" ;;
+  *"commits/"*"/pulls"*)
+    echo "[{\"number\":${GH_STUB_PR_NUMBER:-0},\"state\":\"open\",\"head\":{\"repo\":{\"full_name\":\"${GH_STUB_PR_HEAD_REPO:-petry-projects/.github-private}\"}}}]" ;;
+  *"pulls/${GH_STUB_PR_NUMBER:-0}"*|*"pulls/0"*)
+    echo "{\"number\":${GH_STUB_PR_NUMBER:-0},\"state\":\"open\",\"head\":{\"repo\":{\"full_name\":\"${GH_STUB_PR_HEAD_REPO:-petry-projects/.github-private}\"},\"sha\":\"abc123\"},\"base\":{\"ref\":\"main\"}}" ;;
+  *"comments"*)
+    echo "[{\"body\":\"${GH_STUB_COMMENT_BODY:-}\"}]" ;;
+  *"pr checks"*|*"checks run"*)
+    echo "${GH_STUB_CI_STATUS:-success}" ;;
+  *"pr comment"*)
+    exit 0 ;;
+  *"pr checkout"*)
+    exit 0 ;;
+  *"auth status"*)
+    echo "Logged in to github.com" ;;
+  *"run view"*)
+    echo "${GH_STUB_RUN_LOG:-stub run log output}" ;;
+  *)
+    # For anything else, try the real gh if available, otherwise return empty
+    if command -v /usr/bin/gh >/dev/null 2>&1; then
+      /usr/bin/gh "$@" 2>/dev/null || echo "{}"
+    else
+      echo "{}"
+    fi ;;
+esac

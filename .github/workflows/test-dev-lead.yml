@@ -1,0 +1,53 @@
+name: Test Dev-Lead Agent
+on:
+  pull_request:
+    paths:
+      - 'scripts/dev-lead*'
+      - 'scripts/engine.sh'
+      - '.github/workflows/dev-lead*.yml'
+      - '.github/workflows/test-dev-lead.yml'
+      - 'tests/dev-lead/**'
+      - 'prompts/dev-lead/**'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/dev-lead*'
+      - 'scripts/engine.sh'
+      - 'tests/dev-lead/**'
+      - 'prompts/dev-lead/**'
+  workflow_dispatch: {}
+
+jobs:
+  validate-fixtures:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Validate event fixtures
+        run: find tests/dev-lead/fixtures/events -name '*.json' -exec jq empty {} \;
+
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Install bats
+        run: |
+          npm install -g bats bats-support bats-assert
+      - name: Run unit tests (if exist)
+        run: |
+          if ls tests/dev-lead/unit/*.bats 2>/dev/null; then
+            bats tests/dev-lead/unit/ --formatter tap
+          else
+            echo "No unit tests yet - harness verified"
+          fi
+
+  prompt-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Verify prompt variable coverage
+        run: |
+          if [ -f tests/dev-lead/integration/test_prompt_coverage.sh ]; then
+            bash tests/dev-lead/integration/test_prompt_coverage.sh
+          else
+            echo "Prompt coverage test not yet implemented"
+          fi

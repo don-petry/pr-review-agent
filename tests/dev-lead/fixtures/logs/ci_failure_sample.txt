@@ -1,0 +1,239 @@
+Run npm run lint
+> project@1.0.0 lint
+> eslint src/ --ext .js,.ts --format stylish
+
+/home/runner/work/project/src/utils/helpers.js
+  42:15  error  'result' is assigned a value but never used  no-unused-vars
+  67:3   error  Expected a return value                      consistent-return
+  89:20  warning  Unexpected console statement               no-console
+
+/home/runner/work/project/src/api/endpoints.js
+  15:1   error  'express' is defined but never used          no-unused-vars
+  33:8   error  Missing semicolon                            semi
+  45:12  error  Unexpected use of 'eval'                    no-eval
+  78:5   error  'Promise' body should be split across lines  promise/param-names
+
+/home/runner/work/project/src/models/user.js
+  12:3   error  Missing JSDoc comment for function           valid-jsdoc
+  28:15  error  Unexpected token                             parse-errors
+  55:7   error  Useless constructor                          no-useless-constructor
+  91:1   error  Expected blank line before return statement  newline-before-return
+
+/home/runner/work/project/src/services/auth.js
+  8:10   error  'bcrypt' is not defined                      no-undef
+  24:3   error  Expected '===' and instead saw '=='          eqeqeq
+  37:18  error  Unsafe use of target                         no-unsafe-finally
+  62:5   error  Unexpected var, use let or const instead     no-var
+  85:12  error  Arrow function body should not use braces    arrow-body-style
+
+/home/runner/work/project/src/config/database.js
+  5:3    error  Connection string contains credentials       no-secrets
+  19:7   error  Unhandled promise rejection                  no-unhandled-promise
+
+18 errors, 1 warning
+
+npm ERR! code ELIFECYCLE
+npm ERR! errno 1
+npm ERR! project@1.0.0 lint: `eslint src/ --ext .js,.ts --format stylish`
+npm ERR! Exit status 1
+npm ERR!
+npm ERR! Failed at the project@1.0.0 lint script.
+npm ERR! This is probably not a problem with npm. There is likely additional logging output above.
+
+Run npm test
+> project@1.0.0 test
+> jest --coverage --ci
+
+PASS src/utils/helpers.test.js
+  helpers
+    sanitizeInput
+      + should remove HTML tags (12ms)
+      + should handle empty strings (2ms)
+      + should preserve valid content (1ms)
+    formatDate
+      + should format ISO dates correctly (3ms)
+      - should handle invalid dates (5ms)
+
+FAIL src/api/endpoints.test.js
+  endpoints
+    GET /api/users
+      + should return 200 with user list (45ms)
+      - should require authentication (12ms)
+
+    POST /api/users
+      - should validate required fields (8ms)
+      - should reject duplicate emails (15ms)
+      - should hash passwords before storing (22ms)
+
+    DELETE /api/users/:id
+      + should soft-delete user (18ms)
+      - should require admin role (7ms)
+
+  FAIL  src/api/endpoints.test.js
+  endpoints > GET /api/users > should require authentication
+
+    expect(received).toBe(expected)
+
+    Expected: 401
+    Received: 200
+
+      67 |   it('should require authentication', async () => {
+      68 |     const response = await request(app).get('/api/users');
+    > 69 |     expect(response.status).toBe(401);
+         |                             ^
+      70 |     expect(response.body.error).toBe('Unauthorized');
+      71 |   });
+      72 |
+
+      at Object.<anonymous> (src/api/endpoints.test.js:69:29)
+
+  endpoints > POST /api/users > should validate required fields
+
+    expect(received).toBe(expected)
+
+    Expected: 422
+    Received: 201
+
+      89 |   it('should validate required fields', async () => {
+      90 |     const response = await request(app).post('/api/users').send({});
+    > 91 |     expect(response.status).toBe(422);
+         |                             ^
+      92 |   });
+      93 |
+
+      at Object.<anonymous> (src/api/endpoints.test.js:91:29)
+
+FAIL src/services/auth.test.js
+  AuthService
+    login
+      - should return JWT token on success (8ms)
+      - should reject invalid credentials (6ms)
+      - should lock account after 5 failed attempts (14ms)
+
+    register
+      - should create user with hashed password (11ms)
+      - should send verification email (9ms)
+
+  FAIL  src/services/auth.test.js
+  AuthService > login > should return JWT token on success
+
+    ReferenceError: bcrypt is not defined
+
+      5 | const AuthService = {
+      6 |   login: async (email, password) => {
+    > 7 |     const hash = await bcrypt.hash(password, 10);
+        |                        ^
+      8 |     // ...
+      9 |   }
+      10 | };
+
+      at Object.<anonymous> (src/services/auth.js:7:24)
+      at Object.<anonymous> (src/services/auth.test.js:15:5)
+
+FAIL src/models/user.test.js
+  UserModel
+    create
+      + should save to database (25ms)
+      - should validate email format (4ms)
+      - should enforce unique constraint (18ms)
+
+    findById
+      + should return user if found (11ms)
+      - should return null if not found (3ms)
+
+  FAIL  src/models/user.test.js
+  UserModel > create > should validate email format
+
+    TypeError: user.validate is not a function
+
+      34 |   it('should validate email format', async () => {
+      35 |     const user = new User({ email: 'not-an-email' });
+    > 36 |     await expect(user.validate()).rejects.toThrow();
+         |                       ^
+      37 |   });
+      38 |
+
+      at Object.<anonymous> (src/models/user.test.js:36:23)
+
+Test Suites: 3 failed, 1 passed, 4 total
+Tests:       11 failed, 8 passed, 19 total
+Snapshots:   0 total
+Time:        4.521s
+Ran all suites in 4.521s
+
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   58.33 |    45.21 |   62.50 |   57.89 |
+ src/api           |   67.89 |    55.00 |   75.00 |   68.42 | 15,33,45,78
+ endpoints.js      |   67.89 |    55.00 |   75.00 |   68.42 | 15,33,45,78
+ src/models        |   71.43 |    60.00 |   66.67 |   70.37 | 12,28,55,91
+ user.js           |   71.43 |    60.00 |   66.67 |   70.37 | 12,28,55,91
+ src/services      |   42.86 |    25.00 |   40.00 |   42.86 | 8,24,37,62,85
+ auth.js           |   42.86 |    25.00 |   40.00 |   42.86 | 8,24,37,62,85
+ src/utils         |   83.33 |    75.00 |   100.0 |   83.33 | 67,89
+ helpers.js        |   83.33 |    75.00 |   100.0 |   83.33 | 67,89
+ src/config        |   25.00 |    0.00  |   0.00  |   25.00 | 5,19
+ database.js       |   25.00 |    0.00  |   0.00  |   25.00 | 5,19
+-------------------|---------|----------|---------|---------|-------------------
+
+npm ERR! code ELIFECYCLE
+npm ERR! errno 1
+npm ERR! project@1.0.0 test: `jest --coverage --ci`
+npm ERR! Exit status 1
+npm ERR!
+npm ERR! Failed at the project@1.0.0 test script.
+npm ERR! This is probably not a problem with npm. There is likely additional logging output above.
+
+Error: Process completed with exit code 1.
+
+Run npm run build
+> project@1.0.0 build
+> tsc --noEmit && webpack --config webpack.config.js
+
+src/api/endpoints.js(15,1): error TS2304: Cannot find name 'express'.
+src/services/auth.js(8,10): error TS2304: Cannot find name 'bcrypt'.
+src/models/user.js(28,15): error TS1005: ';' expected.
+src/config/database.js(5,3): error TS2345: Argument of type 'string' is not assignable to parameter of type 'ConnectionOptions'.
+
+Found 4 TypeScript errors.
+
+npm ERR! code ELIFECYCLE
+npm ERR! errno 1
+npm ERR! project@1.0.0 build: `tsc --noEmit && webpack --config webpack.config.js`
+npm ERR! Exit status 1
+
+##[group]Run npm run security-audit
+> project@1.0.0 security-audit
+> npm audit --audit-level=high
+
+# npm audit report
+
+lodash  <=4.17.20
+Severity: critical
+Prototype Pollution - https://npmjs.com/advisories/1523
+Prototype Pollution - https://npmjs.com/advisories/1544
+fix available via `npm audit fix --force`
+Will install lodash@4.17.21, which is a SemVer major change
+
+minimist  <1.2.6
+Severity: high
+Prototype Pollution in minimist - https://npmjs.com/advisories/1179
+fix available via `npm audit fix`
+
+3 vulnerabilities (1 high, 2 critical)
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+npm ERR! code EAUDIT
+npm ERR! errno 1
+npm ERR! Found 3 vulnerabilities (1 high, 2 critical)
+
+##[endgroup]
+##[error]Process completed with exit code 1.
+
+##[group]Post Run actions/checkout@v4
+Cleaning up orphan processes
+Post job cleanup.
+##[endgroup]

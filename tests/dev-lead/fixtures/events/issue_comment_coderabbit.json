@@ -1,0 +1,22 @@
+{
+  "_test_expected_intent": "fix-bot-comment",
+  "action": "created",
+  "issue": {
+    "number": 62,
+    "title": "feat: database optimizations",
+    "state": "open",
+    "pull_request": {
+      "url": "https://api.github.com/repos/petry-projects/.github-private/pulls/62"
+    }
+  },
+  "comment": {
+    "id": 3002,
+    "body": "**CodeRabbit Review**\n\n## Summary\nThis PR introduces several database optimizations but has some concerns:\n1. Missing index on `user_id` column\n2. N+1 query in `getUserOrders` function\n3. Consider using connection pooling",
+    "user": {
+      "login": "coderabbitai[bot]",
+      "type": "Bot"
+    }
+  },
+  "repository": { "full_name": "petry-projects/.github-private" },
+  "sender": { "login": "coderabbitai[bot]", "type": "Bot" }
+}

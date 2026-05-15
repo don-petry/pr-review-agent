@@ -1,0 +1,30 @@
+{
+  "_test_expected_intent": "skip",
+  "action": "submitted",
+  "review": {
+    "id": 1002,
+    "state": "APPROVED",
+    "body": "LGTM! No issues found.",
+    "user": {
+      "login": "copilot-pull-request-reviewer[bot]",
+      "type": "Bot"
+    }
+  },
+  "pull_request": {
+    "number": 55,
+    "title": "fix: bug fix",
+    "state": "open",
+    "author_association": "OWNER",
+    "head": {
+      "sha": "eee555fff666",
+      "ref": "fix/bug-fix",
+      "repo": { "full_name": "petry-projects/.github-private" }
+    },
+    "base": {
+      "ref": "main",
+      "repo": { "full_name": "petry-projects/.github-private" }
+    }
+  },
+  "repository": { "full_name": "petry-projects/.github-private" },
+  "sender": { "login": "copilot-pull-request-reviewer[bot]", "type": "Bot" }
+}
