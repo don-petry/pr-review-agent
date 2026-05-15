@@ -39,32 +39,18 @@ teardown() {
 # ── idempotency tests ────────────────────────────────────────────────────────
 
 @test "fix-ci: idempotency: marker found → exits 0" {
-  # Stub gh to return a comment with our marker
-  local marker="<!-- dev-lead-fix-ci sha=${HEAD_SHA}"
-  export GH_STUB_COMMENT_BODY="$marker"
-
-  # Create a gh stub that returns an existing marker comment
+  # Stub gh to return count 1 when queried for existing marker comments
+  # The script uses: gh api ... --jq "[.[] | select(...)] | length"
+  # Our stub needs to return "1" for that query
   cat > "$STUB_BIN_DIR/gh" <<'GHEOF'
 #!/usr/bin/env bash
-ARGS="$*"
-case "$ARGS" in
+# Return "1" for the comments/idempotency check (simulates marker found)
+case "$*" in
   *"issues/"*"/comments"*)
-    echo "[{\"body\":\"<!-- dev-lead-fix-ci sha=${GH_STUB_COMMENT_BODY:-} status=applied -->\"}]" ;;
+    echo "1" ;;
   *) echo "{}" ;;
 esac
 GHEOF
-  chmod +x "$STUB_BIN_DIR/gh"
-
-  # Override with a script that returns length > 0
-  cat > "$STUB_BIN_DIR/gh" <<GHEOF2
-#!/usr/bin/env bash
-ARGS="\$*"
-case "\$ARGS" in
-  *"issues/"*"/comments"*)
-    echo "[{\"body\":\"<!-- dev-lead-fix-ci sha=abc123def456 status=applied -->\"}]" ;;
-  *) echo "{}" ;;
-esac
-GHEOF2
   chmod +x "$STUB_BIN_DIR/gh"
 
   export DEV_LEAD_DRY_RUN="false"
