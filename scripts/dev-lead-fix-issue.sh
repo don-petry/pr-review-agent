@@ -8,7 +8,7 @@ source "$(dirname "$0")/engine.sh"
 ISSUE_NUMBER="${ISSUE_NUMBER:-}"
 REPO="${REPO:-${GITHUB_REPOSITORY:-}}"
 DEV_LEAD_DRY_RUN="${DEV_LEAD_DRY_RUN:-false}"
-PROMPTS_DIR="${PROMPTS_DIR:-prompts/dev-lead}"
+export PROMPTS_DIR="${PROMPTS_DIR:-prompts/dev-lead}"
 
 check_existing_pr() {
   local existing

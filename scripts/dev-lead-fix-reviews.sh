@@ -10,7 +10,7 @@ PR_NUMBER="${PR_NUMBER:-}"
 REPO="${REPO:-${GITHUB_REPOSITORY:-}}"
 HEAD_SHA="${HEAD_SHA:-}"
 DEV_LEAD_DRY_RUN="${DEV_LEAD_DRY_RUN:-false}"
-PROMPTS_DIR="${PROMPTS_DIR:-prompts/dev-lead}"
+export PROMPTS_DIR="${PROMPTS_DIR:-prompts/dev-lead}"
 
 if [ -z "$PR_NUMBER" ] && [ "$INTENT_TYPE" != "rebase" ]; then
   echo "::error::PR_NUMBER is required"

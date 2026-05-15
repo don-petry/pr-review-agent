@@ -1,11 +1,6 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# Phase 7 — Shadow Period (started 2026-05-15)
-# Both claude.yml and dev-lead.yml run in parallel on .github-private PRs for
-# a 2-week observation window ending ~2026-05-29.
-# Tracking issue: petry-projects/.github-private#180
-# After the window passes without regressions, claude.yml will be removed.
-# ─────────────────────────────────────────────────────────────────────────────
 name: Dev-Lead Agent
+# Phase 7 shadow period: dev-lead.yml and claude.yml run in parallel until ~2026-05-29.
+# Tracking: petry-projects/.github-private#180
 
 on:
   pull_request:

@@ -63,13 +63,15 @@ jobs:
           repository: petry-projects/.github-private
           ref: main
           path: .dev-lead
-          # GH_PAT_WORKFLOWS must have read access to petry-projects/.github-private.
           # Cross-repo callers: github.token cannot read a private org repo — ensure
           # GH_PAT_WORKFLOWS is set as an org or repo secret in the calling repo.
           token: ${{ secrets.GH_PAT_WORKFLOWS || github.token }}
           sparse-checkout: |
             scripts
             prompts/dev-lead
+
+      - name: Protect dev-lead scripts from accidental git staging
+        run: echo ".dev-lead/" >> .gitignore
 
       - name: Classify event intent
         id: intent
@@ -231,3 +233,68 @@ jobs:
           COPILOT_GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           PROMPTS_DIR: .dev-lead/prompts/dev-lead
         run: bash .dev-lead/scripts/dev-lead-fix-reviews.sh
+
+  # ── ci-relay ──────────────────────────────────────────────────────────────────
+  # Handles check_run completed failure events. No LLM — resolves PR number and
+  # fires repository_dispatch dev-lead-ci-failure back to the calling repo.
+  ci-relay:
+    if: >-
+      github.event_name == 'check_run' &&
+      github.event.action == 'completed' &&
+      github.event.check_run.conclusion == 'failure' &&
+      !startsWith(github.event.check_run.name, 'dev-lead / ')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check for associated non-fork PR
+        id: check-pr
+        env:
+          CHECK_RUN_PRS: ${{ toJson(github.event.check_run.pull_requests) }}
+          REPO_FULL_NAME: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          pr_count=$(echo "$CHECK_RUN_PRS" | jq 'length')
+          if [ "$pr_count" -eq 0 ]; then
+            echo "::notice::check_run has no associated PRs — skipping relay"
+            echo "should_relay=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          head_repo_url=$(echo "$CHECK_RUN_PRS" | jq -r '.[0].head.repo.url // empty')
+          expected_url="https://api.github.com/repos/${REPO_FULL_NAME}"
+          if [ -n "$head_repo_url" ] && [ "$head_repo_url" != "$expected_url" ]; then
+            echo "::notice::check_run is from a fork — skipping relay"
+            echo "should_relay=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          pr_number=$(echo "$CHECK_RUN_PRS" | jq -r '.[0].number')
+          echo "should_relay=true" >> "$GITHUB_OUTPUT"
+          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+
+      - name: Emit repository_dispatch dev-lead-ci-failure
+        if: steps.check-pr.outputs.should_relay == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_WORKFLOWS || github.token }}
+          RELAY_PR_NUMBER: ${{ steps.check-pr.outputs.pr_number }}
+          RELAY_HEAD_SHA: ${{ github.event.check_run.head_sha }}
+          RELAY_REPO: ${{ github.repository }}
+          RELAY_CHECK_NAME: ${{ github.event.check_run.name }}
+          RELAY_CONCLUSION: ${{ github.event.check_run.conclusion }}
+          RELAY_DETAILS_URL: ${{ github.event.check_run.details_url }}
+          RELAY_APP_SLUG: ${{ github.event.check_run.app.slug }}
+        run: |
+          set -euo pipefail
+          payload=$(jq -n \
+            --argjson pr_number "$RELAY_PR_NUMBER" \
+            --arg head_sha "$RELAY_HEAD_SHA" \
+            --arg repo "$RELAY_REPO" \
+            --arg name "$RELAY_CHECK_NAME" \
+            --arg conclusion "$RELAY_CONCLUSION" \
+            --arg details_url "$RELAY_DETAILS_URL" \
+            --arg app_slug "$RELAY_APP_SLUG" \
+            '{event_type:"dev-lead-ci-failure",client_payload:{pr_number:$pr_number,head_sha:$head_sha,repo:$repo,checks:[{name:$name,conclusion:$conclusion,details_url:$details_url,app_slug:$app_slug}]}}')
+          echo "$payload" | gh api \
+            --method POST "repos/$RELAY_REPO/dispatches" --input -
+          echo "::notice::Relayed CI failure for PR $RELAY_PR_NUMBER"

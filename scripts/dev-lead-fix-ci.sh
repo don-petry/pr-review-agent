@@ -15,7 +15,7 @@ REPO="${REPO:-${GITHUB_REPOSITORY:-}}"
 MAX_CI_CYCLES="${MAX_CI_CYCLES:-3}"
 LOG_MAX_LINES="${LOG_MAX_LINES:-200}"
 MARKER_PREFIX="<!-- dev-lead-fix-ci sha="
-PROMPTS_DIR="${PROMPTS_DIR:-prompts/dev-lead}"
+export PROMPTS_DIR="${PROMPTS_DIR:-prompts/dev-lead}"
 
 check_idempotency() {
   local existing
