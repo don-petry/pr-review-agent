@@ -15,7 +15,7 @@ on:
         # Required for cross-repo callers: the default github.token cannot read
         # petry-projects/.github-private from another repo. Callers must pass a
         # PAT that has read access to petry-projects/.github-private.
-        required: false
+        required: true
       GOOGLE_API_KEY:
         required: false
       GH_PAT:
@@ -61,7 +61,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: petry-projects/.github-private
-          ref: main
+          ref: ${{ github.workflow_sha }}
           path: .dev-lead
           # Cross-repo callers: github.token cannot read a private org repo — ensure
           # GH_PAT_WORKFLOWS is set as an org or repo secret in the calling repo.
@@ -71,7 +71,9 @@ jobs:
             prompts/dev-lead
 
       - name: Protect dev-lead scripts from accidental git staging
-        run: echo ".dev-lead/" >> .gitignore
+        run: |
+          rm -rf .dev-lead/.git
+          echo ".dev-lead/" >> .gitignore
 
       - name: Classify event intent
         id: intent
@@ -239,7 +241,7 @@ jobs:
   # fires repository_dispatch dev-lead-ci-failure back to the calling repo.
   ci-relay:
     if: >-
-      github.event_name == 'check_run' &&
+      (github.event_name == 'check_run' || inputs.event_name == 'check_run') &&
       github.event.action == 'completed' &&
       github.event.check_run.conclusion == 'failure' &&
       !startsWith(github.event.check_run.name, 'dev-lead / ')
