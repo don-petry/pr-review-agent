@@ -316,6 +316,8 @@ if [ "$TRIAGE_ESCALATE" = "false" ]; then
   echo "    [approve] triage cleared — running single confirmation ($ENGINE_SINGLE_MODEL)"
   export REVIEW_MODE="triage-approved"
   VERDICT_JSON="/tmp/cascade/single-review-verdict.json"
+  # SINGLE_REVIEW_MAX_RETRIES = total attempts including the first (same semantics
+  # as RETRY_MAX_ATTEMPTS in engine.sh). Default 2 = initial attempt + 1 retry.
   SINGLE_REVIEW_MAX_RETRIES="${SINGLE_REVIEW_MAX_RETRIES:-2}"
   SINGLE_REVIEW_RETRY_DELAY_SEC="${SINGLE_REVIEW_RETRY_DELAY_SEC:-15}"
 

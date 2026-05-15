@@ -61,9 +61,6 @@ jobs:
         with:
           token: ${{ secrets.GH_PAT_WORKFLOWS || secrets.GITHUB_TOKEN }}
 
-      - name: Pre-flight checks
-        run: bash scripts/dev-lead-preflight.sh
-
       - name: Classify event intent
         id: intent
         env:
@@ -79,6 +76,10 @@ jobs:
         if: env.INTENT_TYPE == 'skip'
         run: |
           echo "::notice::Skipping event: ${{ env.INTENT_REASON }}"
+
+      - name: Pre-flight checks
+        if: env.INTENT_TYPE != 'skip'
+        run: bash scripts/dev-lead-preflight.sh
 
       # ── Install engine CLIs ───────────────────────────────────────────────
       - name: Cache claude-code CLI
@@ -213,10 +214,12 @@ jobs:
             echo "should_relay=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # Require PR head repo matches this repo (not a fork)
-          head_repo=$(echo "$CHECK_RUN_PRS" | jq -r '.[0].head.repo.full_name')
-          if [ "$head_repo" != "$REPO_FULL_NAME" ]; then
-            echo "::notice::check_run PR is from fork ($head_repo) — skipping relay"
+          # Fork check: check_run.pull_requests[*].head.repo only contains id/url/name
+          # (not full_name), so compare the API URL pattern against the expected repo URL.
+          head_repo_url=$(echo "$CHECK_RUN_PRS" | jq -r '.[0].head.repo.url // empty')
+          expected_url="https://api.github.com/repos/${REPO_FULL_NAME}"
+          if [ -n "$head_repo_url" ] && [ "$head_repo_url" != "$expected_url" ]; then
+            echo "::notice::check_run PR head repo URL ($head_repo_url) does not match expected ($expected_url) — fork, skipping relay"
             echo "should_relay=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
