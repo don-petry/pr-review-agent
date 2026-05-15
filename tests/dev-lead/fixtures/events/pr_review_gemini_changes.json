@@ -1,0 +1,30 @@
+{
+  "_test_expected_intent": "fix-reviews",
+  "action": "submitted",
+  "review": {
+    "id": 1003,
+    "state": "CHANGES_REQUESTED",
+    "body": "Several issues need to be addressed before this can be merged.",
+    "user": {
+      "login": "gemini-code-assist[bot]",
+      "type": "Bot"
+    }
+  },
+  "pull_request": {
+    "number": 56,
+    "title": "refactor: code cleanup",
+    "state": "open",
+    "author_association": "OWNER",
+    "head": {
+      "sha": "fff666ggg777",
+      "ref": "refactor/cleanup",
+      "repo": { "full_name": "petry-projects/.github-private" }
+    },
+    "base": {
+      "ref": "main",
+      "repo": { "full_name": "petry-projects/.github-private" }
+    }
+  },
+  "repository": { "full_name": "petry-projects/.github-private" },
+  "sender": { "login": "gemini-code-assist[bot]", "type": "Bot" }
+}

@@ -1,0 +1,267 @@
+name: Dev-Lead Agent
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  pull_request_review:
+    types: [submitted]
+  pull_request_review_comment:
+    types: [created]
+  issue_comment:
+    types: [created]
+  issues:
+    types: [labeled]
+  check_run:
+    types: [completed]
+  repository_dispatch:
+    types: [dev-lead-ci-failure]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  checks: read
+
+concurrency:
+  # Per-PR slots for most events; ci-relay is ephemeral and runs immediately
+  group: >-
+    ${{
+      github.event_name == 'check_run' && format('dev-lead-ci-relay-{0}', github.event.check_run.head_sha) ||
+      github.event_name == 'repository_dispatch' && format('dev-lead-fix-ci-{0}', github.event.client_payload.pr_number) ||
+      github.event_name == 'issues' && format('dev-lead-issue-{0}', github.event.issue.number) ||
+      format('dev-lead-pr-{0}', github.event.pull_request.number || github.event.issue.number || '0')
+    }}
+  cancel-in-progress: false
+
+env:
+  BOT_USER: ${{ vars.BOT_USER || 'donpetry-bot' }}
+  TRUSTED_BOTS: ${{ vars.TRUSTED_BOTS || 'copilot-pull-request-reviewer[bot],gemini-code-assist[bot],sonarqubecloud[bot],coderabbitai[bot]' }}
+  TRIGGER_PHRASES: ${{ vars.TRIGGER_PHRASES || '@dev-lead' }}
+  DEV_LEAD_ENGINE: ${{ vars.DEV_LEAD_ENGINE || 'claude' }}
+  DEV_LEAD_DRY_RUN: ${{ vars.DEV_LEAD_DRY_RUN || 'false' }}
+  GH_TOKEN: ${{ secrets.GH_PAT_WORKFLOWS || secrets.GITHUB_TOKEN }}
+
+jobs:
+  # ── dispatch ────────────────────────────────────────────────────────────────
+  # Handles all events except check_run (which goes to ci-relay).
+  # 1. Runs dev-lead-intent.sh to classify the event into an intent.
+  # 2. Routes to the appropriate action based on intent.
+  dispatch:
+    if: github.event_name != 'check_run'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      COPILOT_GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+
+    steps:
+      - name: Checkout agent repo
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          token: ${{ secrets.GH_PAT_WORKFLOWS || secrets.GITHUB_TOKEN }}
+
+      - name: Classify event intent
+        id: intent
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          # GITHUB_EVENT_PATH is set automatically by GitHub Actions — no override needed
+        run: bash scripts/dev-lead-intent.sh
+
+      - name: Log intent
+        run: |
+          echo "::notice::intent=$INTENT_TYPE reason=$INTENT_REASON"
+
+      - name: Skip — log reason
+        if: env.INTENT_TYPE == 'skip'
+        run: |
+          echo "::notice::Skipping event: $INTENT_REASON"
+
+      - name: Pre-flight checks
+        if: env.INTENT_TYPE != 'skip'
+        run: bash scripts/dev-lead-preflight.sh
+
+      # ── Install engine CLIs ───────────────────────────────────────────────
+      - name: Cache claude-code CLI
+        if: env.INTENT_TYPE != 'skip'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.npm-global
+          key: claude-code-${{ vars.CLAUDE_CODE_VERSION || 'latest' }}-${{ runner.os }}
+
+      - name: Install engine CLIs
+        if: env.INTENT_TYPE != 'skip'
+        env:
+          CLAUDE_CODE_VERSION: ${{ vars.CLAUDE_CODE_VERSION || 'latest' }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.npm-global"
+          npm config set prefix "$HOME/.npm-global"
+          echo "$HOME/.npm-global/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.npm-global/bin:$PATH"
+
+          if ! command -v claude >/dev/null 2>&1; then
+            npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+          fi
+
+          case "$DEV_LEAD_ENGINE" in
+            gemini)
+              npm install -g @google/gemini-cli || true ;;
+            copilot)
+              if ! gh copilot --version >/dev/null 2>&1; then
+                gh extension install github/gh-copilot || true
+              fi ;;
+          esac
+
+      # ── fix-ci ────────────────────────────────────────────────────────────
+      - name: Run fix-ci
+        if: env.INTENT_TYPE == 'fix-ci'
+        env:
+          PR_NUMBER: ${{ fromJson(env.INTENT_CONTEXT).pr_number }}
+          HEAD_SHA: ${{ fromJson(env.INTENT_CONTEXT).head_sha }}
+          CHECKS_JSON: ${{ toJson(fromJson(env.INTENT_CONTEXT).checks) }}
+          REPO: ${{ github.repository }}
+          REVIEW_ENGINE: ${{ env.DEV_LEAD_ENGINE }}
+        run: bash scripts/dev-lead-fix-ci.sh
+
+      # ── fix-reviews ───────────────────────────────────────────────────────
+      - name: Run fix-reviews
+        if: env.INTENT_TYPE == 'fix-reviews'
+        env:
+          INTENT_TYPE: fix-reviews
+          PR_NUMBER: ${{ fromJson(env.INTENT_CONTEXT).pr_number }}
+          HEAD_SHA: ${{ fromJson(env.INTENT_CONTEXT).head_sha }}
+          REPO: ${{ github.repository }}
+          REVIEW_ENGINE: ${{ env.DEV_LEAD_ENGINE }}
+        run: bash scripts/dev-lead-fix-reviews.sh
+
+      # ── fix-bot-comment ───────────────────────────────────────────────────
+      - name: Run fix-bot-comment
+        if: env.INTENT_TYPE == 'fix-bot-comment'
+        env:
+          INTENT_TYPE: fix-bot-comment
+          PR_NUMBER: ${{ fromJson(env.INTENT_CONTEXT).pr_number }}
+          HEAD_SHA: ${{ fromJson(env.INTENT_CONTEXT).head_sha }}
+          REPO: ${{ github.repository }}
+          REVIEW_ENGINE: ${{ env.DEV_LEAD_ENGINE }}
+        run: bash scripts/dev-lead-fix-reviews.sh
+
+      # ── human ─────────────────────────────────────────────────────────────
+      - name: Run human
+        if: env.INTENT_TYPE == 'human'
+        env:
+          INTENT_TYPE: human
+          PR_NUMBER: ${{ fromJson(env.INTENT_CONTEXT).pr_number }}
+          HEAD_SHA: ${{ fromJson(env.INTENT_CONTEXT).head_sha }}
+          REPO: ${{ github.repository }}
+          REVIEW_ENGINE: ${{ env.DEV_LEAD_ENGINE }}
+        run: bash scripts/dev-lead-fix-reviews.sh
+
+      # ── human-pr ──────────────────────────────────────────────────────────
+      - name: Run human-pr
+        if: env.INTENT_TYPE == 'human-pr'
+        env:
+          INTENT_TYPE: human-pr
+          PR_NUMBER: ${{ fromJson(env.INTENT_CONTEXT).pr_number }}
+          HEAD_SHA: ${{ fromJson(env.INTENT_CONTEXT).head_sha }}
+          REPO: ${{ github.repository }}
+          REVIEW_ENGINE: ${{ env.DEV_LEAD_ENGINE }}
+        run: bash scripts/dev-lead-fix-reviews.sh
+
+      # ── issue ─────────────────────────────────────────────────────────────
+      - name: Run issue
+        if: env.INTENT_TYPE == 'issue'
+        env:
+          ISSUE_NUMBER: ${{ fromJson(env.INTENT_CONTEXT).issue_number }}
+          REPO: ${{ github.repository }}
+          REVIEW_ENGINE: ${{ env.DEV_LEAD_ENGINE }}
+        run: bash scripts/dev-lead-fix-issue.sh
+
+      # ── rebase ────────────────────────────────────────────────────────────
+      - name: Run rebase
+        if: env.INTENT_TYPE == 'rebase'
+        env:
+          INTENT_TYPE: rebase
+          PR_NUMBER: ${{ fromJson(env.INTENT_CONTEXT).pr_number }}
+          REPO: ${{ github.repository }}
+          REVIEW_ENGINE: ${{ env.DEV_LEAD_ENGINE }}
+        run: bash scripts/dev-lead-fix-reviews.sh
+
+  # ── ci-relay ────────────────────────────────────────────────────────────────
+  # Handles check_run completed events only.
+  # No LLM involved — resolves the PR number from the check and fires
+  # a repository_dispatch so the dispatch job can handle it asynchronously.
+  ci-relay:
+    if: >-
+      github.event_name == 'check_run' &&
+      github.event.action == 'completed' &&
+      github.event.check_run.conclusion == 'failure' &&
+      !startsWith(github.event.check_run.name, 'dev-lead / ')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check for associated non-fork PR
+        id: check-pr
+        env:
+          CHECK_RUN_PRS: ${{ toJson(github.event.check_run.pull_requests) }}
+          REPO_FULL_NAME: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Require at least one PR in the check_run.pull_requests array
+          pr_count=$(echo "$CHECK_RUN_PRS" | jq 'length')
+          if [ "$pr_count" -eq 0 ]; then
+            echo "::notice::check_run has no associated PRs — skipping relay"
+            echo "should_relay=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Fork check: check_run.pull_requests[*].head.repo only contains id/url/name
+          # (not full_name), so compare the API URL pattern against the expected repo URL.
+          head_repo_url=$(echo "$CHECK_RUN_PRS" | jq -r '.[0].head.repo.url // empty')
+          expected_url="https://api.github.com/repos/${REPO_FULL_NAME}"
+          if [ -n "$head_repo_url" ] && [ "$head_repo_url" != "$expected_url" ]; then
+            echo "::notice::check_run PR head repo URL ($head_repo_url) does not match expected ($expected_url) — fork, skipping relay"
+            echo "should_relay=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          pr_number=$(echo "$CHECK_RUN_PRS" | jq -r '.[0].number')
+          echo "should_relay=true" >> "$GITHUB_OUTPUT"
+          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+
+      - name: Emit repository_dispatch dev-lead-ci-failure
+        if: steps.check-pr.outputs.should_relay == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_WORKFLOWS || secrets.GITHUB_TOKEN }}
+          # Move all event-sourced values to env vars to prevent script injection
+          RELAY_PR_NUMBER: ${{ steps.check-pr.outputs.pr_number }}
+          RELAY_HEAD_SHA: ${{ github.event.check_run.head_sha }}
+          RELAY_REPO: ${{ github.repository }}
+          RELAY_CHECK_NAME: ${{ github.event.check_run.name }}
+          RELAY_CONCLUSION: ${{ github.event.check_run.conclusion }}
+          RELAY_DETAILS_URL: ${{ github.event.check_run.details_url }}
+          RELAY_APP_SLUG: ${{ github.event.check_run.app.slug }}
+        run: |
+          set -euo pipefail
+          # Build a proper nested JSON payload via jq to avoid shell injection
+          payload=$(jq -n \
+            --argjson pr_number "$RELAY_PR_NUMBER" \
+            --arg head_sha "$RELAY_HEAD_SHA" \
+            --arg repo "$RELAY_REPO" \
+            --arg name "$RELAY_CHECK_NAME" \
+            --arg conclusion "$RELAY_CONCLUSION" \
+            --arg details_url "$RELAY_DETAILS_URL" \
+            --arg app_slug "$RELAY_APP_SLUG" \
+            '{
+              event_type: "dev-lead-ci-failure",
+              client_payload: {
+                pr_number: $pr_number,
+                head_sha: $head_sha,
+                repo: $repo,
+                checks: [{name: $name, conclusion: $conclusion, details_url: $details_url, app_slug: $app_slug}]
+              }
+            }')
+          echo "$payload" | gh api \
+            --method POST \
+            "repos/$RELAY_REPO/dispatches" \
+            --input -
+          echo "::notice::Relayed CI failure for PR $RELAY_PR_NUMBER — dispatched dev-lead-ci-failure"

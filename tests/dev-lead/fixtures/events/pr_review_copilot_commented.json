@@ -1,0 +1,30 @@
+{
+  "_test_expected_intent": "fix-reviews",
+  "action": "submitted",
+  "review": {
+    "id": 1001,
+    "state": "COMMENTED",
+    "body": "Please address the following issues in your code.",
+    "user": {
+      "login": "copilot-pull-request-reviewer[bot]",
+      "type": "Bot"
+    }
+  },
+  "pull_request": {
+    "number": 54,
+    "title": "feat: new feature",
+    "state": "open",
+    "author_association": "OWNER",
+    "head": {
+      "sha": "ddd444eee555",
+      "ref": "feat/new-feature",
+      "repo": { "full_name": "petry-projects/.github-private" }
+    },
+    "base": {
+      "ref": "main",
+      "repo": { "full_name": "petry-projects/.github-private" }
+    }
+  },
+  "repository": { "full_name": "petry-projects/.github-private" },
+  "sender": { "login": "copilot-pull-request-reviewer[bot]", "type": "Bot" }
+}

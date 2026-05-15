@@ -1,0 +1,23 @@
+{
+  "_test_expected_intent": "human-pr",
+  "action": "opened",
+  "number": 50,
+  "pull_request": {
+    "number": 50,
+    "title": "feat: add new feature",
+    "body": "This PR adds a new feature to the codebase.",
+    "state": "open",
+    "author_association": "OWNER",
+    "head": {
+      "sha": "def456abc789",
+      "ref": "feat/new-feature",
+      "repo": { "full_name": "petry-projects/.github-private" }
+    },
+    "base": {
+      "ref": "main",
+      "repo": { "full_name": "petry-projects/.github-private" }
+    }
+  },
+  "repository": { "full_name": "petry-projects/.github-private" },
+  "sender": { "login": "donpetry", "type": "User" }
+}

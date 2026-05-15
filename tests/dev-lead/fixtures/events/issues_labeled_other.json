@@ -1,0 +1,18 @@
+{
+  "_test_expected_intent": "skip",
+  "action": "labeled",
+  "issue": {
+    "number": 102,
+    "title": "bug: login button not working on mobile",
+    "body": "The login button doesn't respond to taps on iOS Safari.",
+    "state": "open",
+    "author_association": "NONE",
+    "labels": [
+      { "name": "bug" },
+      { "name": "mobile" }
+    ]
+  },
+  "label": { "name": "bug" },
+  "repository": { "full_name": "petry-projects/.github-private" },
+  "sender": { "login": "external-user", "type": "User" }
+}

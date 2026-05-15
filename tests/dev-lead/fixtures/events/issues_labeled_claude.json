@@ -1,0 +1,18 @@
+{
+  "_test_expected_intent": "issue",
+  "action": "labeled",
+  "issue": {
+    "number": 101,
+    "title": "fix: resolve memory leak in worker pool",
+    "body": "The worker pool has a memory leak when tasks are cancelled mid-execution.\n\n## Steps to reproduce\n1. Start worker pool with 10 workers\n2. Queue 100 tasks\n3. Cancel all tasks\n4. Check memory usage\n\nExpected: memory released\nActual: memory not released",
+    "state": "open",
+    "author_association": "OWNER",
+    "labels": [
+      { "name": "claude" },
+      { "name": "bug" }
+    ]
+  },
+  "label": { "name": "claude" },
+  "repository": { "full_name": "petry-projects/.github-private" },
+  "sender": { "login": "donpetry", "type": "User" }
+}

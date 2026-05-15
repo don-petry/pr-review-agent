@@ -1,0 +1,31 @@
+{
+  "_test_expected_intent": "skip",
+  "action": "created",
+  "comment": {
+    "id": 2003,
+    "body": "I think this approach could be improved but it works for now.",
+    "path": "src/api/endpoints.js",
+    "line": 88,
+    "user": {
+      "login": "donpetry",
+      "type": "User"
+    }
+  },
+  "pull_request": {
+    "number": 60,
+    "title": "feat: API endpoints",
+    "state": "open",
+    "author_association": "OWNER",
+    "head": {
+      "sha": "jjj000kkk111",
+      "ref": "feat/api",
+      "repo": { "full_name": "petry-projects/.github-private" }
+    },
+    "base": {
+      "ref": "main",
+      "repo": { "full_name": "petry-projects/.github-private" }
+    }
+  },
+  "repository": { "full_name": "petry-projects/.github-private" },
+  "sender": { "login": "donpetry", "type": "User" }
+}

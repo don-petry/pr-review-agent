@@ -1,0 +1,23 @@
+{
+  "_test_expected_intent": "human",
+  "action": "created",
+  "issue": {
+    "number": 63,
+    "title": "feat: test improvements",
+    "state": "open",
+    "author_association": "OWNER",
+    "pull_request": {
+      "url": "https://api.github.com/repos/petry-projects/.github-private/pulls/63"
+    }
+  },
+  "comment": {
+    "id": 3003,
+    "body": "@dev-lead please fix the tests - the integration tests are failing in CI",
+    "user": {
+      "login": "donpetry",
+      "type": "User"
+    }
+  },
+  "repository": { "full_name": "petry-projects/.github-private" },
+  "sender": { "login": "donpetry", "type": "User" }
+}
