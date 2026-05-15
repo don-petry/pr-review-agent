@@ -50,14 +50,15 @@ _get_output() {
   [ "$(_get_env INTENT_REASON)" = "not-implemented" ]
 }
 
-@test "stub: pull_request opened emits skip (not-implemented in Phase 1)" {
+@test "routing: pull_request opened by human emits human-pr" {
   export GITHUB_EVENT_NAME="pull_request"
   export GITHUB_EVENT_PATH="$FIXTURES_DIR/pr_opened_human.json"
+  export GITHUB_REPOSITORY="petry-projects/.github-private"
 
   run bash "$INTENT_SCRIPT"
 
   [ "$status" -eq 0 ]
-  [ "$(_get_env INTENT_TYPE)" = "skip" ]
+  [ "$(_get_env INTENT_TYPE)" = "human-pr" ]
 }
 
 @test "anti-loop: pull_request synchronize from BOT_USER emits skip" {
@@ -72,17 +73,17 @@ _get_output() {
   [ "$(_get_env INTENT_REASON)" = "dev-lead-own-commit" ]
 }
 
-@test "anti-loop: pull_request synchronize from different user does not trigger anti-loop skip with not-implemented" {
-  # A sync from a human should still be skip in Phase 1 (not-implemented)
-  # but should NOT have reason dev-lead-own-commit
+@test "anti-loop: pull_request opened by human does not trigger anti-loop skip" {
+  # A PR opened by a human should NOT have reason dev-lead-own-commit
   export GITHUB_EVENT_NAME="pull_request"
   export GITHUB_EVENT_PATH="$FIXTURES_DIR/pr_opened_human.json"
   export BOT_USER="donpetry-bot"
+  export GITHUB_REPOSITORY="petry-projects/.github-private"
 
   run bash "$INTENT_SCRIPT"
 
   [ "$status" -eq 0 ]
-  [ "$(_get_env INTENT_TYPE)" = "skip" ]
+  # Should not be skipped due to anti-loop
   [ "$(_get_env INTENT_REASON)" != "dev-lead-own-commit" ]
 }
 
@@ -97,34 +98,39 @@ _get_output() {
   [ "$(_get_env INTENT_REASON)" = "check-run-handled-by-ci-relay" ]
 }
 
-@test "issue_comment event emits skip (not-implemented in Phase 1)" {
+@test "issue_comment human trigger event emits human intent" {
   export GITHUB_EVENT_NAME="issue_comment"
   export GITHUB_EVENT_PATH="$FIXTURES_DIR/issue_comment_human_trigger.json"
+  export TRUSTED_BOTS="copilot-pull-request-reviewer[bot],gemini-code-assist[bot],sonarqubecloud[bot],coderabbitai[bot]"
+  export TRIGGER_PHRASES="@dev-lead"
+  export GITHUB_REPOSITORY="petry-projects/.github-private"
 
   run bash "$INTENT_SCRIPT"
 
   [ "$status" -eq 0 ]
-  [ "$(_get_env INTENT_TYPE)" = "skip" ]
+  [ "$(_get_env INTENT_TYPE)" = "human" ]
 }
 
-@test "issues labeled event emits skip (not-implemented in Phase 1)" {
+@test "issues labeled dev-lead event emits issue intent" {
   export GITHUB_EVENT_NAME="issues"
   export GITHUB_EVENT_PATH="$FIXTURES_DIR/issues_labeled_dev_lead.json"
+  export GITHUB_REPOSITORY="petry-projects/.github-private"
 
   run bash "$INTENT_SCRIPT"
 
   [ "$status" -eq 0 ]
-  [ "$(_get_env INTENT_TYPE)" = "skip" ]
+  [ "$(_get_env INTENT_TYPE)" = "issue" ]
 }
 
-@test "repository_dispatch event emits skip (not-implemented in Phase 1)" {
+@test "repository_dispatch ci-failure event emits fix-ci intent" {
   export GITHUB_EVENT_NAME="repository_dispatch"
   export GITHUB_EVENT_PATH="$FIXTURES_DIR/repository_dispatch_ci_failure.json"
+  export GITHUB_REPOSITORY="petry-projects/.github-private"
 
   run bash "$INTENT_SCRIPT"
 
   [ "$status" -eq 0 ]
-  [ "$(_get_env INTENT_TYPE)" = "skip" ]
+  [ "$(_get_env INTENT_TYPE)" = "fix-ci" ]
 }
 
 @test "INTENT_TYPE is written to both GITHUB_ENV and GITHUB_OUTPUT" {

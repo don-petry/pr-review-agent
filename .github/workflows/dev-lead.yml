@@ -114,51 +114,76 @@ jobs:
       # ── fix-ci ────────────────────────────────────────────────────────────
       - name: Run fix-ci
         if: env.INTENT_TYPE == 'fix-ci'
-        run: |
-          echo "::notice::Running fix-ci for PR ${{ env.INTENT_CONTEXT }}"
-          # TODO Phase 2: implement fix-ci runner
+        env:
+          PR_NUMBER: ${{ fromJson(env.INTENT_CONTEXT).pr_number }}
+          HEAD_SHA: ${{ fromJson(env.INTENT_CONTEXT).head_sha }}
+          CHECKS_JSON: ${{ toJson(fromJson(env.INTENT_CONTEXT).checks) }}
+          REPO: ${{ github.repository }}
+          REVIEW_ENGINE: ${{ env.DEV_LEAD_ENGINE }}
+        run: bash scripts/dev-lead-fix-ci.sh
 
       # ── fix-reviews ───────────────────────────────────────────────────────
       - name: Run fix-reviews
         if: env.INTENT_TYPE == 'fix-reviews'
-        run: |
-          echo "::notice::Running fix-reviews for PR ${{ env.INTENT_CONTEXT }}"
-          # TODO Phase 2: implement fix-reviews runner
+        env:
+          INTENT_TYPE: fix-reviews
+          PR_NUMBER: ${{ fromJson(env.INTENT_CONTEXT).pr_number }}
+          HEAD_SHA: ${{ fromJson(env.INTENT_CONTEXT).head_sha }}
+          REPO: ${{ github.repository }}
+          REVIEW_ENGINE: ${{ env.DEV_LEAD_ENGINE }}
+        run: bash scripts/dev-lead-fix-reviews.sh
 
       # ── fix-bot-comment ───────────────────────────────────────────────────
       - name: Run fix-bot-comment
         if: env.INTENT_TYPE == 'fix-bot-comment'
-        run: |
-          echo "::notice::Running fix-bot-comment for PR ${{ env.INTENT_CONTEXT }}"
-          # TODO Phase 2: implement fix-bot-comment runner
+        env:
+          INTENT_TYPE: fix-bot-comment
+          PR_NUMBER: ${{ fromJson(env.INTENT_CONTEXT).pr_number }}
+          HEAD_SHA: ${{ fromJson(env.INTENT_CONTEXT).head_sha }}
+          REPO: ${{ github.repository }}
+          REVIEW_ENGINE: ${{ env.DEV_LEAD_ENGINE }}
+        run: bash scripts/dev-lead-fix-reviews.sh
 
       # ── human ─────────────────────────────────────────────────────────────
       - name: Run human
         if: env.INTENT_TYPE == 'human'
-        run: |
-          echo "::notice::Running human task for PR ${{ env.INTENT_CONTEXT }}"
-          # TODO Phase 2: implement human runner
+        env:
+          INTENT_TYPE: human
+          PR_NUMBER: ${{ fromJson(env.INTENT_CONTEXT).pr_number }}
+          HEAD_SHA: ${{ fromJson(env.INTENT_CONTEXT).head_sha }}
+          REPO: ${{ github.repository }}
+          REVIEW_ENGINE: ${{ env.DEV_LEAD_ENGINE }}
+        run: bash scripts/dev-lead-fix-reviews.sh
 
       # ── human-pr ──────────────────────────────────────────────────────────
       - name: Run human-pr
         if: env.INTENT_TYPE == 'human-pr'
-        run: |
-          echo "::notice::Running human-pr for PR ${{ env.INTENT_CONTEXT }}"
-          # TODO Phase 2: implement human-pr runner
+        env:
+          INTENT_TYPE: human-pr
+          PR_NUMBER: ${{ fromJson(env.INTENT_CONTEXT).pr_number }}
+          HEAD_SHA: ${{ fromJson(env.INTENT_CONTEXT).head_sha }}
+          REPO: ${{ github.repository }}
+          REVIEW_ENGINE: ${{ env.DEV_LEAD_ENGINE }}
+        run: bash scripts/dev-lead-fix-reviews.sh
 
       # ── issue ─────────────────────────────────────────────────────────────
       - name: Run issue
         if: env.INTENT_TYPE == 'issue'
-        run: |
-          echo "::notice::Running issue for #${{ env.INTENT_CONTEXT }}"
-          # TODO Phase 2: implement issue runner
+        env:
+          ISSUE_NUMBER: ${{ fromJson(env.INTENT_CONTEXT).issue_number }}
+          REPO: ${{ github.repository }}
+          REVIEW_ENGINE: ${{ env.DEV_LEAD_ENGINE }}
+        run: bash scripts/dev-lead-fix-issue.sh
 
       # ── rebase ────────────────────────────────────────────────────────────
       - name: Run rebase
         if: env.INTENT_TYPE == 'rebase'
-        run: |
-          echo "::notice::Running rebase for PR ${{ env.INTENT_CONTEXT }}"
-          # TODO Phase 2: implement rebase runner
+        env:
+          INTENT_TYPE: rebase
+          PR_NUMBER: ${{ fromJson(env.INTENT_CONTEXT).pr_number }}
+          REPO: ${{ github.repository }}
+          REVIEW_ENGINE: ${{ env.DEV_LEAD_ENGINE }}
+        run: bash scripts/dev-lead-fix-reviews.sh
 
   # ── ci-relay ────────────────────────────────────────────────────────────────
   # Handles check_run completed events only.
