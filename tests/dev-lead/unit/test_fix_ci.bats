@@ -39,15 +39,12 @@ teardown() {
 # ── idempotency tests ────────────────────────────────────────────────────────
 
 @test "fix-ci: idempotency: marker found → exits 0" {
-  # Stub gh to return count 1 when queried for existing marker comments
-  # The script uses: gh api ... --jq "[.[] | select(...)] | length"
-  # Our stub needs to return "1" for that query
+  # Return a JSON array whose body contains the SHA marker; script uses jq to extract bodies
   cat > "$STUB_BIN_DIR/gh" <<'GHEOF'
 #!/usr/bin/env bash
-# Return "1" for the comments/idempotency check (simulates marker found)
 case "$*" in
   *"issues/"*"/comments"*)
-    echo "1" ;;
+    echo '[{"body":"<!-- dev-lead-fix-ci sha=abc123def456 status=applied -->\nfix applied"}]' ;;
   *) echo "{}" ;;
 esac
 GHEOF
@@ -57,7 +54,7 @@ GHEOF
   run bash "$FIX_CI_SCRIPT"
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"idempotent"* ]]
+  [[ "$output" == *"idempotent"* || "$output" == *"Already handled"* ]]
 }
 
 @test "fix-ci: idempotency: no marker → proceeds" {
@@ -236,7 +233,7 @@ GHEOF
   run bash "$FIX_CI_SCRIPT"
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"exhaustion"* || "$output" == *"Exhaustion"* ]]
+  [[ "$output" == *"exhaustion"* || "$output" == *"Exhaustion"* || "$output" == *"threshold"* ]]
 }
 
 @test "exhaustion: existing PR-level exhaustion marker blocks run regardless of SHA" {

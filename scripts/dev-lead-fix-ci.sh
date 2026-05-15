@@ -24,8 +24,9 @@ export PROMPTS_DIR="${PROMPTS_DIR:-prompts/dev-lead}"
 # OR if a PR-level exhaustion marker exists (blocks all future SHAs).
 check_idempotency() {
   local comments
-  comments=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" \
-    --jq '.[].body' 2>/dev/null || true)
+  # Use standalone jq so the mock stub in tests can return raw JSON
+  comments=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" 2>/dev/null \
+    | jq -r '.[].body' 2>/dev/null || true)
 
   # PR-level exhaustion — blocks regardless of SHA
   if echo "$comments" | grep -qF "${EXHAUSTION_MARKER}"; then
@@ -41,11 +42,12 @@ check_idempotency() {
   return 1
 }
 
-# count_recent_failures: count status=failed markers in the last N comments on this PR
+# count_recent_failures: count status=failed markers on this PR (any SHA)
 count_recent_failures() {
-  gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" \
-    --jq "[.[] | select(.body | test(\"${MARKER_PREFIX}[a-f0-9]+ status=failed\"))] | length" \
-    2>/dev/null || echo "0"
+  local pattern="${MARKER_PREFIX}[a-f0-9A-F]* status=failed"
+  gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" 2>/dev/null \
+    | jq "[.[] | select(.body | test(\"${pattern}\"))] | length" 2>/dev/null \
+    || echo "0"
 }
 
 collect_logs() {
