@@ -91,6 +91,8 @@ jobs:
 
       - name: Install engine CLIs
         if: env.INTENT_TYPE != 'skip'
+        env:
+          CLAUDE_CODE_VERSION: ${{ vars.CLAUDE_CODE_VERSION || 'latest' }}
         run: |
           set -euo pipefail
           mkdir -p "$HOME/.npm-global"
@@ -98,7 +100,6 @@ jobs:
           echo "$HOME/.npm-global/bin" >> "$GITHUB_PATH"
           export PATH="$HOME/.npm-global/bin:$PATH"
 
-          CLAUDE_CODE_VERSION="${{ vars.CLAUDE_CODE_VERSION || 'latest' }}"
           if ! command -v claude >/dev/null 2>&1; then
             npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
           fi
