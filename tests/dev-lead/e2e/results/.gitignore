@@ -1,0 +1,3 @@
+# Ignore all E2E test result files (generated at runtime)
+*
+!.gitignore
