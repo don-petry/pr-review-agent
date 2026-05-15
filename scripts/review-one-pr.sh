@@ -447,9 +447,8 @@ DEEP_RC=0
 wait $DEEP_PID || DEEP_RC=$?
 
 # Validate primary deep review (required).
-# Check on process failure OR missing/invalid JSON — whichever fires first.
 OUTPUT_FILE="/tmp/cascade/deep.json"
-if [ "$DEEP_RC" -ne 0 ] || [ ! -s "$OUTPUT_FILE" ] || ! jq empty "$OUTPUT_FILE" 2>/dev/null; then
+if [ ! -s "$OUTPUT_FILE" ] || ! jq empty "$OUTPUT_FILE" 2>/dev/null; then
   # Check the model's stdout for a rate-limit or CLI-error message.  We
   # intentionally do NOT check deep.log (stderr/process noise) to avoid false
   # positives from PR diff content that happens to mention these keywords in
@@ -475,6 +474,9 @@ if [ "$DEEP_RC" -ne 0 ] || [ ! -s "$OUTPUT_FILE" ] || ! jq empty "$OUTPUT_FILE" 
   echo "::error::cascade failed at tier 2 for $PR_URL"
   exit 1
 fi
+# JSON is valid — if the process still exited non-zero log it but proceed:
+# the agent may have written the verdict before a non-fatal wrapper error.
+[ "$DEEP_RC" -ne 0 ] && echo "::warning::deep review process exited $DEEP_RC but produced valid JSON — proceeding"
 
 # Wait for duck to finish (deep succeeded)
 wait $DUCK_PID || true
