@@ -70,12 +70,12 @@ jobs:
 
       - name: Log intent
         run: |
-          echo "::notice::intent=${{ env.INTENT_TYPE }} reason=${{ env.INTENT_REASON }}"
+          echo "::notice::intent=$INTENT_TYPE reason=$INTENT_REASON"
 
       - name: Skip — log reason
         if: env.INTENT_TYPE == 'skip'
         run: |
-          echo "::notice::Skipping event: ${{ env.INTENT_REASON }}"
+          echo "::notice::Skipping event: $INTENT_REASON"
 
       - name: Pre-flight checks
         if: env.INTENT_TYPE != 'skip'
@@ -231,17 +231,25 @@ jobs:
         if: steps.check-pr.outputs.should_relay == 'true'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT_WORKFLOWS || secrets.GITHUB_TOKEN }}
+          # Move all event-sourced values to env vars to prevent script injection
+          RELAY_PR_NUMBER: ${{ steps.check-pr.outputs.pr_number }}
+          RELAY_HEAD_SHA: ${{ github.event.check_run.head_sha }}
+          RELAY_REPO: ${{ github.repository }}
+          RELAY_CHECK_NAME: ${{ github.event.check_run.name }}
+          RELAY_CONCLUSION: ${{ github.event.check_run.conclusion }}
+          RELAY_DETAILS_URL: ${{ github.event.check_run.details_url }}
+          RELAY_APP_SLUG: ${{ github.event.check_run.app.slug }}
         run: |
           set -euo pipefail
-          # Build a proper nested JSON payload; --field cannot encode nested objects
+          # Build a proper nested JSON payload via jq to avoid shell injection
           payload=$(jq -n \
-            --argjson pr_number '${{ steps.check-pr.outputs.pr_number }}' \
-            --arg head_sha '${{ github.event.check_run.head_sha }}' \
-            --arg repo '${{ github.repository }}' \
-            --arg name '${{ github.event.check_run.name }}' \
-            --arg conclusion '${{ github.event.check_run.conclusion }}' \
-            --arg details_url '${{ github.event.check_run.details_url }}' \
-            --arg app_slug '${{ github.event.check_run.app.slug }}' \
+            --argjson pr_number "$RELAY_PR_NUMBER" \
+            --arg head_sha "$RELAY_HEAD_SHA" \
+            --arg repo "$RELAY_REPO" \
+            --arg name "$RELAY_CHECK_NAME" \
+            --arg conclusion "$RELAY_CONCLUSION" \
+            --arg details_url "$RELAY_DETAILS_URL" \
+            --arg app_slug "$RELAY_APP_SLUG" \
             '{
               event_type: "dev-lead-ci-failure",
               client_payload: {
@@ -253,6 +261,6 @@ jobs:
             }')
           echo "$payload" | gh api \
             --method POST \
-            "repos/${{ github.repository }}/dispatches" \
+            "repos/$RELAY_REPO/dispatches" \
             --input -
-          echo "::notice::Relayed CI failure for PR ${{ steps.check-pr.outputs.pr_number }} — dispatched dev-lead-ci-failure"
+          echo "::notice::Relayed CI failure for PR $RELAY_PR_NUMBER — dispatched dev-lead-ci-failure"
