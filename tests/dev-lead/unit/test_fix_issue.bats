@@ -51,13 +51,14 @@ teardown() {
 # ── dedup tests ───────────────────────────────────────────────────────────────
 
 @test "fix-issue: dedup: existing open PR → exits 0 with comment" {
-  # Stub gh to return an existing PR for this issue branch
+  # Stub gh to return count > 0 for the dedup check
+  # The script uses: gh api ".../pulls?state=open" --jq "[.[] | select(...)] | length"
+  # Our stub returns "1" to simulate existing PR found
   cat > "$STUB_BIN_DIR/gh" <<'GHEOF'
 #!/usr/bin/env bash
-ARGS="$*"
-case "$ARGS" in
+case "$*" in
   *"pulls?state=open"*)
-    echo '[{"number":50,"head":{"ref":"dev-lead/issue-100-20260101-1200"}}]' ;;
+    echo "1" ;;
   *"issue comment"*)
     exit 0 ;;
   *) echo "{}" ;;
