@@ -368,6 +368,8 @@ sys.exit(1)
 # run_duck <prompt_file> <model>
 # Cross-engine adversarial "rubber duck" review.
 # DUCK_ENGINE is set by engine.sh init: claude→copilot, gemini→claude, copilot→gemini.
+# All three engine branches (claude, gemini, copilot) are reachable — the gemini
+# branch executes when REVIEW_ENGINE=copilot (copilot primary → gemini duck).
 # Output to stdout. Strips non-selected engine credentials to prevent cross-engine leakage.
 run_duck() {
   local prompt_file="$1"
