@@ -235,29 +235,38 @@ echo "    [tier1] triage ($ENGINE_TRIAGE_MODEL)"
 # so the model only ever saw the literal text "$PR_METADATA" and reported
 # the data as missing. Inlining the values is the fix.)
 _gh_meta_err=/tmp/cascade/gh-meta-prefetch.err
-mkdir -p /tmp/cascade
+_gh_diff_err=/tmp/cascade/gh-diff-prefetch.err
+_gh_diff_tmp=/tmp/cascade/gh-diff-raw.txt
 PR_METADATA=$(gh pr view "$PR_URL" --json number,title,body,author,isDraft,baseRefName,headRefName,headRefOid,url,headRepository,headRepositoryOwner,labels,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,reviewRequests,reviews,comments,commits,closingIssuesReferences,additions,deletions,changedFiles,files 2>"$_gh_meta_err") || {
-  if is_rate_limited "$(cat "$_gh_meta_err" 2>/dev/null || true)"; then
+  _gh_meta_err_content=$(cat "$_gh_meta_err" 2>/dev/null || true)
+  if is_rate_limited "$_gh_meta_err_content"; then
+    rm -f "$_gh_meta_err" "$_gh_diff_err" "$_gh_diff_tmp"
     echo "    gh API rate limited on metadata fetch — skipping PR (will retry next run)"
     echo "{\"pr\":\"$PR_URL\",\"sha\":\"$PR_HEAD_SHA\",\"decision\":\"skip\",\"reason\":\"gh-rate-limited\"}"
     exit 100
   fi
-  PR_METADATA='{}'
+  echo "::error::gh pr view failed during metadata prefetch for $PR_URL"
+  [ -n "$_gh_meta_err_content" ] && echo "    $_gh_meta_err_content"
+  rm -f "$_gh_meta_err" "$_gh_diff_err" "$_gh_diff_tmp"
+  exit 1
 }
-_gh_diff_err=/tmp/cascade/gh-diff-prefetch.err
-_gh_diff_tmp=/tmp/cascade/gh-diff-raw.txt
 if gh pr diff "$PR_URL" > "$_gh_diff_tmp" 2>"$_gh_diff_err"; then
   PR_DIFF=$(head -3000 "$_gh_diff_tmp")
 else
-  if is_rate_limited "$(cat "$_gh_diff_err" 2>/dev/null || true)"; then
+  _gh_diff_err_content=$(cat "$_gh_diff_err" 2>/dev/null || true)
+  if is_rate_limited "$_gh_diff_err_content"; then
+    rm -f "$_gh_meta_err" "$_gh_diff_err" "$_gh_diff_tmp"
     echo "    gh API rate limited on diff fetch — skipping PR (will retry next run)"
     echo "{\"pr\":\"$PR_URL\",\"sha\":\"$PR_HEAD_SHA\",\"decision\":\"skip\",\"reason\":\"gh-rate-limited\"}"
     exit 100
   fi
-  PR_DIFF=""
+  echo "::error::gh pr diff failed during prefetch for $PR_URL"
+  [ -n "$_gh_diff_err_content" ] && echo "    $_gh_diff_err_content"
+  rm -f "$_gh_meta_err" "$_gh_diff_err" "$_gh_diff_tmp"
+  exit 1
 fi
-rm -f "$_gh_diff_tmp"
-unset _gh_meta_err _gh_diff_err _gh_diff_tmp
+rm -f "$_gh_meta_err" "$_gh_diff_err" "$_gh_diff_tmp"
+unset _gh_meta_err _gh_diff_err _gh_diff_tmp _gh_meta_err_content _gh_diff_err_content
 
 # Build the triage prompt: static template + inlined PR context.
 TRIAGE_PROMPT_FILE="/tmp/cascade/triage-prompt.md"
@@ -291,15 +300,14 @@ unset PR_DIFF PR_METADATA
 # Claude Code writes its usage-cap error to stdout (captured in TRIAGE_RESULT);
 # some other providers write to stderr (TRIAGE_LOG) — check both channels.
 TRIAGE_STDERR=$(cat "$TRIAGE_LOG" 2>/dev/null || true)
-# Rate-limit check runs unconditionally (not gated on rc != 0) for the triage
-# tier because the model runs with ALL tools denied — it cannot call gh or any
-# external API. A 429 in the triage output therefore always comes from the AI
-# service itself being rate-limited, never from PR diff content passing through
-# a tool call. (Agentic tiers keep the rc-gated check to avoid false positives
-# from PRs that contain 429 error-handling code visible in Bash tool results.)
-if is_rate_limited "$TRIAGE_RESULT" || is_rate_limited "$TRIAGE_STDERR"; then
+# TRIAGE_STDERR is always process output — safe to check unconditionally.
+# TRIAGE_RESULT is gated on rc != 0 to avoid false positives: the triage prompt
+# inlines the full PR diff, so a PR adding "429 rate-limit handling" could
+# produce valid JSON with matching text in signals/summary, incorrectly
+# triggering engine fallback on a healthy call that exited 0.
+if is_rate_limited "$TRIAGE_STDERR"; then
   echo "    [tier1] usage/rate limit detected — exiting with code 2 for engine fallback"
-  echo "    limit message: ${TRIAGE_RESULT:-}${TRIAGE_STDERR:+ (stderr: $TRIAGE_STDERR)}"
+  echo "    limit message: (stderr: $TRIAGE_STDERR)"
   exit 2
 fi
 if [ "$TRIAGE_RC" -ne 0 ]; then
@@ -309,6 +317,12 @@ if [ "$TRIAGE_RC" -ne 0 ]; then
     echo "    [error] CLI format error — treating as per-PR failure (not a rate limit)"
     echo "    error message: ${TRIAGE_RESULT:-}${TRIAGE_STDERR:+ (stderr: $TRIAGE_STDERR)}"
     exit 1
+  fi
+  # Rate-limit / overload — exit 2 so the caller can fall back to a different engine.
+  if is_rate_limited "$TRIAGE_RESULT"; then
+    echo "    [tier1] usage/rate limit detected — exiting with code 2 for engine fallback"
+    echo "    limit message: ${TRIAGE_RESULT:-}"
+    exit 2
   fi
 fi
 
