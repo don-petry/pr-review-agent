@@ -234,8 +234,30 @@ echo "    [tier1] triage ($ENGINE_TRIAGE_MODEL)"
 # but `claude --print` does not interpolate shell variables into the prompt,
 # so the model only ever saw the literal text "$PR_METADATA" and reported
 # the data as missing. Inlining the values is the fix.)
-PR_METADATA=$(gh pr view "$PR_URL" --json number,title,body,author,isDraft,baseRefName,headRefName,headRefOid,url,headRepository,headRepositoryOwner,labels,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,reviewRequests,reviews,comments,commits,closingIssuesReferences,additions,deletions,changedFiles,files 2>/dev/null || echo '{}')
-PR_DIFF=$(gh pr diff "$PR_URL" 2>/dev/null | head -3000 || echo "")
+_gh_meta_err=/tmp/cascade/gh-meta-prefetch.err
+mkdir -p /tmp/cascade
+PR_METADATA=$(gh pr view "$PR_URL" --json number,title,body,author,isDraft,baseRefName,headRefName,headRefOid,url,headRepository,headRepositoryOwner,labels,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,reviewRequests,reviews,comments,commits,closingIssuesReferences,additions,deletions,changedFiles,files 2>"$_gh_meta_err") || {
+  if is_rate_limited "$(cat "$_gh_meta_err" 2>/dev/null || true)"; then
+    echo "    gh API rate limited on metadata fetch — skipping PR (will retry next run)"
+    echo "{\"pr\":\"$PR_URL\",\"sha\":\"$PR_HEAD_SHA\",\"decision\":\"skip\",\"reason\":\"gh-rate-limited\"}"
+    exit 100
+  fi
+  PR_METADATA='{}'
+}
+_gh_diff_err=/tmp/cascade/gh-diff-prefetch.err
+_gh_diff_tmp=/tmp/cascade/gh-diff-raw.txt
+if gh pr diff "$PR_URL" > "$_gh_diff_tmp" 2>"$_gh_diff_err"; then
+  PR_DIFF=$(head -3000 "$_gh_diff_tmp")
+else
+  if is_rate_limited "$(cat "$_gh_diff_err" 2>/dev/null || true)"; then
+    echo "    gh API rate limited on diff fetch — skipping PR (will retry next run)"
+    echo "{\"pr\":\"$PR_URL\",\"sha\":\"$PR_HEAD_SHA\",\"decision\":\"skip\",\"reason\":\"gh-rate-limited\"}"
+    exit 100
+  fi
+  PR_DIFF=""
+fi
+rm -f "$_gh_diff_tmp"
+unset _gh_meta_err _gh_diff_err _gh_diff_tmp
 
 # Build the triage prompt: static template + inlined PR context.
 TRIAGE_PROMPT_FILE="/tmp/cascade/triage-prompt.md"
@@ -269,6 +291,17 @@ unset PR_DIFF PR_METADATA
 # Claude Code writes its usage-cap error to stdout (captured in TRIAGE_RESULT);
 # some other providers write to stderr (TRIAGE_LOG) — check both channels.
 TRIAGE_STDERR=$(cat "$TRIAGE_LOG" 2>/dev/null || true)
+# Rate-limit check runs unconditionally (not gated on rc != 0) for the triage
+# tier because the model runs with ALL tools denied — it cannot call gh or any
+# external API. A 429 in the triage output therefore always comes from the AI
+# service itself being rate-limited, never from PR diff content passing through
+# a tool call. (Agentic tiers keep the rc-gated check to avoid false positives
+# from PRs that contain 429 error-handling code visible in Bash tool results.)
+if is_rate_limited "$TRIAGE_RESULT" || is_rate_limited "$TRIAGE_STDERR"; then
+  echo "    [tier1] usage/rate limit detected — exiting with code 2 for engine fallback"
+  echo "    limit message: ${TRIAGE_RESULT:-}${TRIAGE_STDERR:+ (stderr: $TRIAGE_STDERR)}"
+  exit 2
+fi
 if [ "$TRIAGE_RC" -ne 0 ]; then
   # CLI invocation errors (bad flags, wrong syntax) are per-PR failures — exit 1
   # so the session can continue with the next PR rather than aborting entirely.
@@ -276,12 +309,6 @@ if [ "$TRIAGE_RC" -ne 0 ]; then
     echo "    [error] CLI format error — treating as per-PR failure (not a rate limit)"
     echo "    error message: ${TRIAGE_RESULT:-}${TRIAGE_STDERR:+ (stderr: $TRIAGE_STDERR)}"
     exit 1
-  fi
-  # Rate-limit / overload — exit 2 so the caller can fall back to a different engine.
-  if is_rate_limited "$TRIAGE_RESULT" || is_rate_limited "$TRIAGE_STDERR"; then
-    echo "    [tier1] usage/rate limit detected — exiting with code 2 for engine fallback"
-    echo "    limit message: ${TRIAGE_RESULT:-}${TRIAGE_STDERR:+ (stderr: $TRIAGE_STDERR)}"
-    exit 2
   fi
 fi
 
@@ -414,11 +441,15 @@ DUCK_OUTPUT="/tmp/cascade/rubber-duck.json"
 DUCK_PID=$!
 
 # Wait for deep review first — if it fails, kill the duck and exit early.
-wait $DEEP_PID || true
+# Capture the exit code explicitly; `|| true` would swallow it and prevent
+# rate-limit detection when the process exits non-zero without writing JSON.
+DEEP_RC=0
+wait $DEEP_PID || DEEP_RC=$?
 
-# Validate primary deep review (required)
+# Validate primary deep review (required).
+# Check on process failure OR missing/invalid JSON — whichever fires first.
 OUTPUT_FILE="/tmp/cascade/deep.json"
-if [ ! -s "$OUTPUT_FILE" ] || ! jq empty "$OUTPUT_FILE" 2>/dev/null; then
+if [ "$DEEP_RC" -ne 0 ] || [ ! -s "$OUTPUT_FILE" ] || ! jq empty "$OUTPUT_FILE" 2>/dev/null; then
   # Check the model's stdout for a rate-limit or CLI-error message.  We
   # intentionally do NOT check deep.log (stderr/process noise) to avoid false
   # positives from PR diff content that happens to mention these keywords in
@@ -437,6 +468,7 @@ if [ ! -s "$OUTPUT_FILE" ] || ! jq empty "$OUTPUT_FILE" 2>/dev/null; then
     echo "$DEEP_STDOUT_CONTENT"
     exit 2
   fi
+  [ "$DEEP_RC" -ne 0 ] && echo "::warning::deep review process exited $DEEP_RC"
   echo "::warning::deep review did not produce valid JSON at $OUTPUT_FILE"
   cat /tmp/cascade/deep-stdout.txt 2>/dev/null || true
   cat /tmp/cascade/deep.log 2>/dev/null || true
