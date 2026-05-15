@@ -154,12 +154,6 @@ case "$EVENT_NAME" in
           emit_skip "bot-sync"
           exit 0
         fi
-        # Also skip if commit message contains [skip ci-relay]
-        head_commit_msg=$(jq -r '.head_commit.message // empty' "$EVENT_PATH" 2>/dev/null || true)
-        if echo "$head_commit_msg" | grep -qF "[skip ci-relay]"; then
-          emit_skip "skip-ci-relay-commit"
-          exit 0
-        fi
         context=$(printf '{"pr_number":%s,"head_sha":"%s"}' "${pr_number:-0}" "${head_sha:-}")
         emit_intent "human-pr" "pr-synchronize" "$context"
         ;;

@@ -25,10 +25,6 @@ case "$ARGS" in
   *"run view"*)
     echo "${GH_STUB_RUN_LOG:-stub run log output}" ;;
   *)
-    # For anything else, try the real gh if available, otherwise return empty
-    if command -v /usr/bin/gh >/dev/null 2>&1; then
-      /usr/bin/gh "$@" 2>/dev/null || echo "{}"
-    else
-      echo "{}"
-    fi ;;
+    # For anything else, return empty — do not invoke real gh in tests
+    echo "{}" ;;
 esac

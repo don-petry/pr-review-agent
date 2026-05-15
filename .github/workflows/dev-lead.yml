@@ -68,7 +68,7 @@ jobs:
         id: intent
         env:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
-          GITHUB_EVENT_PATH: ${{ github.event_path }}
+          # GITHUB_EVENT_PATH is set automatically by GitHub Actions — no override needed
         run: bash scripts/dev-lead-intent.sh
 
       - name: Log intent
@@ -230,19 +230,26 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_PAT_WORKFLOWS || secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          gh api \
+          # Build a proper nested JSON payload; --field cannot encode nested objects
+          payload=$(jq -n \
+            --argjson pr_number '${{ steps.check-pr.outputs.pr_number }}' \
+            --arg head_sha '${{ github.event.check_run.head_sha }}' \
+            --arg repo '${{ github.repository }}' \
+            --arg name '${{ github.event.check_run.name }}' \
+            --arg conclusion '${{ github.event.check_run.conclusion }}' \
+            --arg details_url '${{ github.event.check_run.details_url }}' \
+            --arg app_slug '${{ github.event.check_run.app.slug }}' \
+            '{
+              event_type: "dev-lead-ci-failure",
+              client_payload: {
+                pr_number: $pr_number,
+                head_sha: $head_sha,
+                repo: $repo,
+                checks: [{name: $name, conclusion: $conclusion, details_url: $details_url, app_slug: $app_slug}]
+              }
+            }')
+          echo "$payload" | gh api \
             --method POST \
             "repos/${{ github.repository }}/dispatches" \
-            --field event_type=dev-lead-ci-failure \
-            --field client_payload="{
-              \"pr_number\": ${{ steps.check-pr.outputs.pr_number }},
-              \"head_sha\": \"${{ github.event.check_run.head_sha }}\",
-              \"repo\": \"${{ github.repository }}\",
-              \"checks\": [{
-                \"name\": \"${{ github.event.check_run.name }}\",
-                \"conclusion\": \"${{ github.event.check_run.conclusion }}\",
-                \"details_url\": \"${{ github.event.check_run.details_url }}\",
-                \"app_slug\": \"${{ github.event.check_run.app.slug }}\"
-              }]
-            }"
+            --input -
           echo "::notice::Relayed CI failure for PR ${{ steps.check-pr.outputs.pr_number }} — dispatched dev-lead-ci-failure"
