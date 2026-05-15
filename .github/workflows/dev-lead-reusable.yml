@@ -12,6 +12,9 @@ on:
       CLAUDE_CODE_OAUTH_TOKEN:
         required: true
       GH_PAT_WORKFLOWS:
+        # Required for cross-repo callers: the default github.token cannot read
+        # petry-projects/.github-private from another repo. Callers must pass a
+        # PAT that has read access to petry-projects/.github-private.
         required: false
       GOOGLE_API_KEY:
         required: false
@@ -58,7 +61,11 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: petry-projects/.github-private
+          ref: main
           path: .dev-lead
+          # GH_PAT_WORKFLOWS must have read access to petry-projects/.github-private.
+          # Cross-repo callers: github.token cannot read a private org repo — ensure
+          # GH_PAT_WORKFLOWS is set as an org or repo secret in the calling repo.
           token: ${{ secrets.GH_PAT_WORKFLOWS || github.token }}
           sparse-checkout: |
             scripts
