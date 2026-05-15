@@ -234,8 +234,39 @@ echo "    [tier1] triage ($ENGINE_TRIAGE_MODEL)"
 # but `claude --print` does not interpolate shell variables into the prompt,
 # so the model only ever saw the literal text "$PR_METADATA" and reported
 # the data as missing. Inlining the values is the fix.)
-PR_METADATA=$(gh pr view "$PR_URL" --json number,title,body,author,isDraft,baseRefName,headRefName,headRefOid,url,headRepository,headRepositoryOwner,labels,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,reviewRequests,reviews,comments,commits,closingIssuesReferences,additions,deletions,changedFiles,files 2>/dev/null || echo '{}')
-PR_DIFF=$(gh pr diff "$PR_URL" 2>/dev/null | head -3000 || echo "")
+_gh_meta_err=/tmp/cascade/gh-meta-prefetch.err
+_gh_diff_err=/tmp/cascade/gh-diff-prefetch.err
+_gh_diff_tmp=/tmp/cascade/gh-diff-raw.txt
+PR_METADATA=$(gh pr view "$PR_URL" --json number,title,body,author,isDraft,baseRefName,headRefName,headRefOid,url,headRepository,headRepositoryOwner,labels,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,reviewRequests,reviews,comments,commits,closingIssuesReferences,additions,deletions,changedFiles,files 2>"$_gh_meta_err") || {
+  _gh_meta_err_content=$(cat "$_gh_meta_err" 2>/dev/null || true)
+  if is_rate_limited "$_gh_meta_err_content"; then
+    rm -f "$_gh_meta_err" "$_gh_diff_err" "$_gh_diff_tmp"
+    echo "    gh API rate limited on metadata fetch — skipping PR (will retry next run)"
+    echo "{\"pr\":\"$PR_URL\",\"sha\":\"$PR_HEAD_SHA\",\"decision\":\"skip\",\"reason\":\"gh-rate-limited\"}"
+    exit 100
+  fi
+  echo "::error::gh pr view failed during metadata prefetch for $PR_URL"
+  [ -n "$_gh_meta_err_content" ] && echo "    $_gh_meta_err_content"
+  rm -f "$_gh_meta_err" "$_gh_diff_err" "$_gh_diff_tmp"
+  exit 1
+}
+if gh pr diff "$PR_URL" > "$_gh_diff_tmp" 2>"$_gh_diff_err"; then
+  PR_DIFF=$(head -3000 "$_gh_diff_tmp")
+else
+  _gh_diff_err_content=$(cat "$_gh_diff_err" 2>/dev/null || true)
+  if is_rate_limited "$_gh_diff_err_content"; then
+    rm -f "$_gh_meta_err" "$_gh_diff_err" "$_gh_diff_tmp"
+    echo "    gh API rate limited on diff fetch — skipping PR (will retry next run)"
+    echo "{\"pr\":\"$PR_URL\",\"sha\":\"$PR_HEAD_SHA\",\"decision\":\"skip\",\"reason\":\"gh-rate-limited\"}"
+    exit 100
+  fi
+  echo "::error::gh pr diff failed during prefetch for $PR_URL"
+  [ -n "$_gh_diff_err_content" ] && echo "    $_gh_diff_err_content"
+  rm -f "$_gh_meta_err" "$_gh_diff_err" "$_gh_diff_tmp"
+  exit 1
+fi
+rm -f "$_gh_meta_err" "$_gh_diff_err" "$_gh_diff_tmp"
+unset _gh_meta_err _gh_diff_err _gh_diff_tmp _gh_meta_err_content _gh_diff_err_content
 
 # Build the triage prompt: static template + inlined PR context.
 TRIAGE_PROMPT_FILE="/tmp/cascade/triage-prompt.md"
@@ -269,6 +300,16 @@ unset PR_DIFF PR_METADATA
 # Claude Code writes its usage-cap error to stdout (captured in TRIAGE_RESULT);
 # some other providers write to stderr (TRIAGE_LOG) — check both channels.
 TRIAGE_STDERR=$(cat "$TRIAGE_LOG" 2>/dev/null || true)
+# TRIAGE_STDERR is always process output — safe to check unconditionally.
+# TRIAGE_RESULT is gated on rc != 0 to avoid false positives: the triage prompt
+# inlines the full PR diff, so a PR adding "429 rate-limit handling" could
+# produce valid JSON with matching text in signals/summary, incorrectly
+# triggering engine fallback on a healthy call that exited 0.
+if is_rate_limited "$TRIAGE_STDERR"; then
+  echo "    [tier1] usage/rate limit detected — exiting with code 2 for engine fallback"
+  echo "    limit message: (stderr: $TRIAGE_STDERR)"
+  exit 2
+fi
 if [ "$TRIAGE_RC" -ne 0 ]; then
   # CLI invocation errors (bad flags, wrong syntax) are per-PR failures — exit 1
   # so the session can continue with the next PR rather than aborting entirely.
@@ -278,9 +319,9 @@ if [ "$TRIAGE_RC" -ne 0 ]; then
     exit 1
   fi
   # Rate-limit / overload — exit 2 so the caller can fall back to a different engine.
-  if is_rate_limited "$TRIAGE_RESULT" || is_rate_limited "$TRIAGE_STDERR"; then
+  if is_rate_limited "$TRIAGE_RESULT"; then
     echo "    [tier1] usage/rate limit detected — exiting with code 2 for engine fallback"
-    echo "    limit message: ${TRIAGE_RESULT:-}${TRIAGE_STDERR:+ (stderr: $TRIAGE_STDERR)}"
+    echo "    limit message: ${TRIAGE_RESULT:-}"
     exit 2
   fi
 fi
@@ -414,9 +455,12 @@ DUCK_OUTPUT="/tmp/cascade/rubber-duck.json"
 DUCK_PID=$!
 
 # Wait for deep review first — if it fails, kill the duck and exit early.
-wait $DEEP_PID || true
+# Capture the exit code explicitly; `|| true` would swallow it and prevent
+# rate-limit detection when the process exits non-zero without writing JSON.
+DEEP_RC=0
+wait $DEEP_PID || DEEP_RC=$?
 
-# Validate primary deep review (required)
+# Validate primary deep review (required).
 OUTPUT_FILE="/tmp/cascade/deep.json"
 if [ ! -s "$OUTPUT_FILE" ] || ! jq empty "$OUTPUT_FILE" 2>/dev/null; then
   # Check the model's stdout for a rate-limit or CLI-error message.  We
@@ -437,12 +481,16 @@ if [ ! -s "$OUTPUT_FILE" ] || ! jq empty "$OUTPUT_FILE" 2>/dev/null; then
     echo "$DEEP_STDOUT_CONTENT"
     exit 2
   fi
+  [ "$DEEP_RC" -ne 0 ] && echo "::warning::deep review process exited $DEEP_RC"
   echo "::warning::deep review did not produce valid JSON at $OUTPUT_FILE"
   cat /tmp/cascade/deep-stdout.txt 2>/dev/null || true
   cat /tmp/cascade/deep.log 2>/dev/null || true
   echo "::error::cascade failed at tier 2 for $PR_URL"
   exit 1
 fi
+# JSON is valid — if the process still exited non-zero log it but proceed:
+# the agent may have written the verdict before a non-fatal wrapper error.
+[ "$DEEP_RC" -ne 0 ] && echo "::warning::deep review process exited $DEEP_RC but produced valid JSON — proceeding"
 
 # Wait for duck to finish (deep succeeded)
 wait $DUCK_PID || true
