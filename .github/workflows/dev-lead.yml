@@ -78,7 +78,7 @@ jobs:
         run: |
           # Expand INTENT_CONTEXT JSON into individual GITHUB_ENV vars so subsequent
           # step env: blocks can reference ${{ env.INTENT_PR_NUMBER }} without fromJson()
-          ctx="${INTENT_CONTEXT:-{\}}"
+          ctx="${INTENT_CONTEXT:-{}}"
           echo "INTENT_PR_NUMBER=$(echo "$ctx" | jq -r '.pr_number // ""')" >> "$GITHUB_ENV"
           echo "INTENT_HEAD_SHA=$(echo "$ctx"  | jq -r '.head_sha // ""')"  >> "$GITHUB_ENV"
           echo "INTENT_CHECKS=$(echo "$ctx"    | jq -c '.checks // []')"    >> "$GITHUB_ENV"
