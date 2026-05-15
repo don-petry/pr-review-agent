@@ -9,3 +9,7 @@ updates:
     labels:
       - "security"
       - "dependencies"
+    groups:
+      actions:
+        patterns:
+          - "*"
