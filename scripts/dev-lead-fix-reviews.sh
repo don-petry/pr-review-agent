@@ -5,7 +5,7 @@ set -euo pipefail
 
 source "$(dirname "$0")/engine.sh"
 
-INTENT_TYPE="${INTENT_TYPE:-fix-reviews}"
+INTENT_TYPE="${INTENT_TYPE:?INTENT_TYPE must be set by the workflow}"
 PR_NUMBER="${PR_NUMBER:-}"
 REPO="${REPO:-${GITHUB_REPOSITORY:-}}"
 HEAD_SHA="${HEAD_SHA:-}"
