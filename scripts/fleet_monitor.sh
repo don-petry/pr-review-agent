@@ -17,6 +17,10 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/fleet_report.sh
+source "${SCRIPT_DIR}/fleet_report.sh"
+
 ORG="${ORG:-petry-projects}"
 LOOKBACK_DAYS="${LOOKBACK_DAYS:-1}"
 REPORT_FILE="fleet_monitor_report.md"
@@ -66,19 +70,7 @@ echo "Found ${repo_count} non-archived repos — window: since ${CUTOFF}"
 echo ""
 
 # ---------------------------------------------------------------------------
-# 2. Helpers
-# ---------------------------------------------------------------------------
-fmt_dur() {
-  local s="$1"
-  if [ "$s" -ge 60 ]; then
-    printf '%dm%ds' $(( s / 60 )) $(( s % 60 ))
-  else
-    printf '%ds' "$s"
-  fi
-}
-
-# ---------------------------------------------------------------------------
-# 3. Collect metrics per repo → per workflow
+# 2. Collect metrics per repo → per workflow
 # ---------------------------------------------------------------------------
 metrics_file=$(mktemp)
 failed_file=$(mktemp)
@@ -88,7 +80,6 @@ total_workflows=0
 for repo in "${repos[@]}"; do
   printf '  %s\n' "$repo"
 
-  # Paginate workflow list; warn and skip on access errors
   if ! workflows_raw=$(gh api "repos/${repo}/actions/workflows?per_page=100" --paginate \
     --jq '[.workflows[] | select(.state == "active") | {id: (.id | tostring), file: (.path | split("/") | last)}]' \
     2>/dev/null); then
@@ -102,7 +93,6 @@ for repo in "${repos[@]}"; do
   total_workflows=$(( total_workflows + wf_count ))
 
   while IFS=$'\t' read -r wf_id wf_file; do
-    # Paginate run list; warn and skip on access errors
     if ! runs_raw=$(gh api \
       "repos/${repo}/actions/workflows/${wf_id}/runs?per_page=100&created=>=${CUTOFF}" \
       --paginate \
@@ -133,6 +123,7 @@ for repo in "${repos[@]}"; do
       else                               label="WARNING";  sort_key=2
       fi
     else
+      rate_int=0
       rate_display="n/a"
       label="—"
       sort_key=4
@@ -145,10 +136,12 @@ for repo in "${repos[@]}"; do
         "\($d[$n * 50 / 100 | floor]) \($d[$n * 95 / 100 | floor])"
       end')
 
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    # 12 fields: sort_key repo wf_file total success failed cancelled
+    #            rate_display p50 p95 label rate_int
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
       "$sort_key" "$repo" "$wf_file" \
       "$total" "$success" "$failed" "$cancelled" \
-      "$rate_display" "$p50" "$p95" "$label" \
+      "$rate_display" "$p50" "$p95" "$label" "$rate_int" \
       >> "$metrics_file"
 
     if [ "$failed" -gt 0 ]; then
@@ -168,40 +161,31 @@ for repo in "${repos[@]}"; do
 done
 
 # ---------------------------------------------------------------------------
-# 4. Build report (sorted by severity: CRITICAL → DEGRADED → WARNING → HEALTHY)
+# 3. Generate reports
 # ---------------------------------------------------------------------------
-{
+report_header() {
   printf '# Actions Fleet Monitor — %s\n\n' "$TODAY"
   printf '**Org:** `%s` | **Lookback:** %s day(s) | **Repos:** %s | **Workflows:** %s\n\n' \
     "$ORG" "$LOOKBACK_DAYS" "$repo_count" "$total_workflows"
+}
 
-  printf '## Fleet Summary\n\n'
-  printf '| Repo | Workflow | Total | ✅ | ❌ | ⚪ | Failure Rate | p50 | p95 | Status |\n'
-  printf '|---|---|---|---|---|---|---|---|---|---|\n'
+# Step Summary — Tier 1 visualizations only (Mermaid not rendered there)
+# GitHub Step Summary has a 1 MB hard limit per job. At ~200 bytes per row
+# this supports ~5 000 workflows before truncation.
+if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+  { report_header; generate_report "$metrics_file" "$failed_file" "false"; } \
+    >> "$GITHUB_STEP_SUMMARY"
+fi
 
-  sort -t$'\t' -k1,1n "$metrics_file" | \
-  while IFS=$'\t' read -r _key repo wf_file total success failed cancelled rate_display p50 p95 label; do
-    printf '| `%s` | `%s` | %s | %s | %s | %s | %s | %s | %s | %s |\n' \
-      "$repo" "$wf_file" "$total" "$success" "$failed" "$cancelled" \
-      "$rate_display" "$(fmt_dur "$p50")" "$(fmt_dur "$p95")" "$label"
-  done
-
-  if [ "$any_failures" -eq 1 ]; then
-    printf '\n## Failed Runs\n'
-    cat "$failed_file"
-  fi
-} > "$REPORT_FILE"
+# Report file — full report with Mermaid charts (used as Issue body)
+{ report_header; generate_report "$metrics_file" "$failed_file" "true"; } \
+  > "$REPORT_FILE"
 
 rm -f "$metrics_file" "$failed_file"
 
 # ---------------------------------------------------------------------------
-# 5. Emit step summary and export env flags
+# 4. Export env flags
 # ---------------------------------------------------------------------------
-# GitHub Step Summary has a 1 MB hard limit per job. At ~200 bytes per row
-# this supports ~5 000 workflows before truncation; monitor report size if
-# the org grows significantly or lookback windows are extended.
-[ -n "${GITHUB_STEP_SUMMARY:-}" ] && cat "$REPORT_FILE" >> "$GITHUB_STEP_SUMMARY"
-
 if [ "$any_failures" -eq 1 ]; then
   [ -n "${GITHUB_ENV:-}" ] && echo "HAS_FAILURES=true" >> "$GITHUB_ENV"
 fi
