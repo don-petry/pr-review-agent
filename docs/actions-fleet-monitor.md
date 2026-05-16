@@ -26,12 +26,12 @@ The monitor runs automatically on a daily schedule from `.github-private`. No pe
 
 To trigger manually:
 
-```
+```bash
 gh workflow run actions-fleet-monitor.yml \
   --repo petry-projects/.github-private \
   --field org=petry-projects \
   --field lookback_days=7
-```
+```bash
 
 To invoke from another workflow:
 
@@ -43,7 +43,7 @@ jobs:
       org: petry-projects
       lookback_days: '7'
     secrets: inherit
-```
+```bash
 
 ## Inputs
 
