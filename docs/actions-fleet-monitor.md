@@ -18,7 +18,7 @@ The fleet summary table is sorted by severity so the worst performers appear fir
 ## Delivery
 
 - **Step Summary** — fleet table written on every run; visible in the Actions UI without leaving GitHub.
-- **GitHub Issue** — opened in `.github-private` when any workflow has failed runs; title references the org.
+- **GitHub Issue** — opened when any workflow has failed runs; see [Issue destination](#issue-destination) below.
 
 ## Usage
 
@@ -31,7 +31,7 @@ gh workflow run actions-fleet-monitor.yml \
   --repo petry-projects/.github-private \
   --field org=petry-projects \
   --field lookback_days=7
-```bash
+```
 
 To invoke from another workflow:
 
@@ -43,7 +43,14 @@ jobs:
       org: petry-projects
       lookback_days: '7'
     secrets: inherit
-```bash
+```
+
+## Issue destination
+
+Issue creation uses `github.token` with `context.repo`:
+
+- **Scheduled / `workflow_dispatch`** — runs in `.github-private`; issues are created there.
+- **`workflow_call` from another repo** — `context.repo` refers to the **caller's** repository; issues are therefore created in the caller's repo using the caller's `GITHUB_TOKEN`. Ensure the calling workflow grants `issues: write` permission.
 
 ## Inputs
 
@@ -56,7 +63,7 @@ jobs:
 
 | Variable | Source | Description |
 |---|---|---|
-| `GH_TOKEN` | `secrets.DON_PETRY_BOT_GH_PAT` | PAT with `actions:read` across the org |
+| `GH_TOKEN` | `secrets.DON_PETRY_BOT_GH_PAT` | PAT with `actions:read` across the org — intentionally a PAT rather than `GITHUB_TOKEN` because the default Actions token lacks cross-org `actions:read` |
 | `ORG` | workflow input | Target org |
 | `LOOKBACK_DAYS` | workflow input | Lookback window |
 
@@ -72,9 +79,13 @@ jobs:
 
 Thresholds are defined in `scripts/fleet_monitor.sh`.
 
+## Known limitations
+
+- **1,000-run cap per workflow**: The GitHub workflow-runs API returns at most 1,000 results per `created>=` query even with `--paginate`. High-frequency workflows with > 1,000 runs in the lookback window will have older runs silently omitted. Practical impact: at 1,000 runs over 7 days, that is ~143 runs/day, which only applies to event-driven workflows in large active repos.
+
 ## Linting
 
-`shellcheck` runs on all PRs that touch `scripts/` or `.github/workflows/` via `.github/workflows/lint.yml`.
+`shellcheck` and `bats` run on all PRs that touch `scripts/`, `.github/workflows/`, or `tests/` via `.github/workflows/lint.yml`.
 
 ## RFC
 
