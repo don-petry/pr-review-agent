@@ -309,14 +309,21 @@ case "$EVENT_NAME" in
     case "$dispatch_type" in
       dev-lead-ci-failure)
         checks=$(jq -c '.client_payload.checks // []' "$EVENT_PATH" 2>/dev/null || echo "[]")
-        context=$(printf '{"pr_number":%s,"head_sha":"%s","checks":%s}' "${pr_number}" "${head_sha:-}" "${checks}")
+        context=$(jq -nc \
+          --argjson pr_number "$pr_number" \
+          --arg head_sha "${head_sha:-}" \
+          --argjson checks "$checks" \
+          '{"pr_number":$pr_number,"head_sha":$head_sha,"checks":$checks}')
         emit_intent "fix-ci" "ci-failure-dispatch" "$context"
         ;;
       dev-lead-reviews-retry)
         intent_type=$(jq -r '.client_payload.intent_type // empty' "$EVENT_PATH" 2>/dev/null || true)
         case "$intent_type" in
           fix-reviews|fix-bot-comment|human|human-pr|rebase)
-            context=$(printf '{"pr_number":%s,"head_sha":"%s"}' "${pr_number}" "${head_sha:-}")
+            context=$(jq -nc \
+              --argjson pr_number "$pr_number" \
+              --arg head_sha "${head_sha:-}" \
+              '{"pr_number":$pr_number,"head_sha":$head_sha}')
             emit_intent "$intent_type" "reviews-retry-dispatch" "$context"
             ;;
           *)

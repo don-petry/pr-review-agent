@@ -8,25 +8,35 @@ set -euo pipefail
 # appropriate dev-lead event so the run is retried once the rate limit clears.
 #
 # Env (required):
-#   GH_TOKEN            — PAT with repo + workflow read scopes
+#   GH_TOKEN            — PAT with repo + contents:write scopes
 #   TARGET_ORG          — GitHub org to scan (default: petry-projects)
 #
 # Env (optional):
 #   DELEGATION_ORGS     — space-separated additional orgs to scan
-#   BOT_USER            — bot account name, excluded from PR author filter
 #   DISPATCH_DELAY_SEC  — seconds between repo dispatches (default: 30) to
 #                         prevent cascading org-wide rate-limit hits
 #   DRY_RUN             — if "true", log what would be dispatched but don't send
 #   NOW_ISO             — override current time for testing (ISO-8601 UTC)
+#
+# Retryable intents: fix-reviews, human-pr, rebase
+#   These intents fetch all needed context (open threads, PR metadata) fresh
+#   from the GitHub API at run time, so a re-dispatch has full fidelity.
+#
+# NOT retried automatically: human, fix-bot-comment
+#   These intents require USER_INSTRUCTION / COMMENT_BODY from the original
+#   triggering event, which cannot be reconstructed from the PR's current
+#   state. Users are asked to re-trigger manually.
 
 TARGET_ORG="${TARGET_ORG:-petry-projects}"
 DELEGATION_ORGS="${DELEGATION_ORGS:-}"
-BOT_USER="${BOT_USER:-donpetry-bot}"
 DISPATCH_DELAY_SEC="${DISPATCH_DELAY_SEC:-30}"
 DRY_RUN="${DRY_RUN:-false}"
 
 CI_MARKER_PREFIX="<!-- dev-lead-fix-ci sha="
 REVIEWS_MARKER_PREFIX="<!-- dev-lead-fix-reviews pr="
+
+# Intents whose context can be fully reconstructed at retry time
+RETRYABLE_REVIEW_INTENTS="fix-reviews human-pr rebase"
 
 # get_now_epoch: current UTC time as unix epoch (overridable for tests)
 get_now_epoch() {
@@ -46,39 +56,69 @@ is_reset_in_future() {
   [ "$(get_now_epoch)" -lt "$reset_epoch" ]
 }
 
+# lookup_check_run_details <repo> <head_sha> <check_name>
+# Returns JSON {id, details_url} for the most recent failed check matching
+# check_name on head_sha, so the retry dispatch has full failure context.
+lookup_check_run_details() {
+  local repo="$1" head_sha="$2" check_name="$3"
+  gh api "repos/${repo}/commits/${head_sha}/check-runs?per_page=100" \
+    --jq --arg name "$check_name" \
+    '.check_runs
+     | map(select(.name == $name and .conclusion == "failure"))
+     | sort_by(.completed_at)
+     | last
+     | {id: (.id // ""), details_url: (.details_url // "")}' \
+    2>/dev/null || echo '{"id":"","details_url":""}'
+}
+
 # dispatch_ci_retry <repo> <pr_number> <head_sha> <check_name>
+# All logging goes to stderr so the function's stdout (empty) stays clean
+# when called from within a command substitution.
 dispatch_ci_retry() {
   local repo="$1" pr_number="$2" head_sha="$3" check_name="${4:-CI failure}"
-  echo "  -> dispatch ci-retry: repo=${repo} pr=${pr_number} sha=${head_sha:0:8}"
+  echo "  -> dispatch ci-retry: repo=${repo} pr=${pr_number} sha=${head_sha:0:8} check=${check_name}" >&2
   if [ "$DRY_RUN" = "true" ]; then
-    echo "  [dry-run] would dispatch dev-lead-ci-failure for PR ${pr_number} in ${repo}"
+    echo "  [dry-run] would dispatch dev-lead-ci-failure for PR ${pr_number} in ${repo}" >&2
     return 0
   fi
+
+  # Look up the current check run to provide full failure context (details_url,
+  # check run id) so fix-ci.sh can fetch logs and annotations for the retry.
+  local run_details check_run_id details_url
+  run_details=$(lookup_check_run_details "$repo" "$head_sha" "$check_name")
+  check_run_id=$(echo "$run_details" | jq -r '.id // ""')
+  details_url=$(echo "$run_details"  | jq -r '.details_url // ""')
+
   local payload
   payload=$(jq -n \
     --argjson pr_number "$pr_number" \
     --arg head_sha "$head_sha" \
     --arg repo "$repo" \
     --arg name "$check_name" \
+    --arg details_url "$details_url" \
+    --argjson check_run_id "$([ -n "$check_run_id" ] && echo "$check_run_id" || echo 'null')" \
     '{
       event_type: "dev-lead-ci-failure",
       client_payload: {
         pr_number: $pr_number,
         head_sha: $head_sha,
         repo: $repo,
-        checks: [{name: $name, conclusion: "failure", details_url: "", app_slug: "github-actions"}]
+        checks: [{name: $name, conclusion: "failure", details_url: $details_url,
+                  app_slug: "github-actions", id: $check_run_id}]
       }
     }')
-  echo "$payload" | gh api --method POST "repos/${repo}/dispatches" --input - 2>&1 || \
-    echo "  [warn] dispatch failed for PR ${pr_number} in ${repo}"
+  if ! echo "$payload" | gh api --method POST "repos/${repo}/dispatches" --input - >/dev/null 2>&1; then
+    echo "  [warn] dispatch failed for PR ${pr_number} in ${repo}" >&2
+  fi
 }
 
 # dispatch_reviews_retry <repo> <pr_number> <head_sha> <intent_type>
+# All logging goes to stderr (same reason as dispatch_ci_retry above).
 dispatch_reviews_retry() {
   local repo="$1" pr_number="$2" head_sha="$3" intent_type="$4"
-  echo "  -> dispatch reviews-retry: repo=${repo} pr=${pr_number} sha=${head_sha:0:8} intent=${intent_type}"
+  echo "  -> dispatch reviews-retry: repo=${repo} pr=${pr_number} sha=${head_sha:0:8} intent=${intent_type}" >&2
   if [ "$DRY_RUN" = "true" ]; then
-    echo "  [dry-run] would dispatch dev-lead-reviews-retry for PR ${pr_number} in ${repo} intent=${intent_type}"
+    echo "  [dry-run] would dispatch dev-lead-reviews-retry for PR ${pr_number} in ${repo} intent=${intent_type}" >&2
     return 0
   fi
   local payload
@@ -96,13 +136,15 @@ dispatch_reviews_retry() {
         intent_type: $intent_type
       }
     }')
-  echo "$payload" | gh api --method POST "repos/${repo}/dispatches" --input - 2>&1 || \
-    echo "  [warn] dispatch failed for PR ${pr_number} in ${repo}"
+  if ! echo "$payload" | gh api --method POST "repos/${repo}/dispatches" --input - >/dev/null 2>&1; then
+    echo "  [warn] dispatch failed for PR ${pr_number} in ${repo}" >&2
+  fi
 }
 
 # scan_pr_for_rate_limits <repo> <pr_number>
 # Checks the PR's comments for rate-limited markers and dispatches retries.
-# Returns number of retries dispatched (0 = nothing to retry).
+# Prints only a single integer (retries dispatched) to stdout; all other
+# output goes to stderr so callers can safely capture the count.
 scan_pr_for_rate_limits() {
   local repo="$1" pr_number="$2"
 
@@ -110,13 +152,14 @@ scan_pr_for_rate_limits() {
   local head_sha
   head_sha=$(gh api "repos/${repo}/pulls/${pr_number}" --jq '.head.sha' 2>/dev/null || true)
   if [ -z "$head_sha" ]; then
-    echo "  [warn] could not resolve HEAD SHA for PR ${pr_number} in ${repo} — skipping"
+    echo "  [warn] could not resolve HEAD SHA for PR ${pr_number} in ${repo} — skipping" >&2
+    echo "0"
     return 0
   fi
 
-  # Fetch all comment bodies for this PR
+  # Fetch all comment bodies, paginating to ensure we don't miss markers on busy PRs
   local comments_json
-  comments_json=$(gh api "repos/${repo}/issues/${pr_number}/comments" \
+  comments_json=$(gh api --paginate "repos/${repo}/issues/${pr_number}/comments?per_page=100" \
     --jq '[.[].body]' 2>/dev/null || echo "[]")
 
   local dispatched=0
@@ -132,17 +175,17 @@ scan_pr_for_rate_limits() {
       2>/dev/null || true)
 
     if is_reset_in_future "$reset_time"; then
-      echo "  [skip] fix-ci rate-limit for PR ${pr_number} not yet cleared (resets ${reset_time})"
+      echo "  [skip] fix-ci rate-limit for PR ${pr_number} not yet cleared (resets ${reset_time})" >&2
     else
-      # Also check if a terminal marker was already posted for this SHA (retry succeeded)
+      # Skip if a terminal marker was already posted for this SHA (prior retry succeeded)
       local terminal_pattern="${CI_MARKER_PREFIX}${head_sha} status=(applied|failed|no-changes)"
       if echo "$comments_json" | jq -e --arg pat "$terminal_pattern" '[.[] | select(. | test($pat))] | length > 0' >/dev/null 2>&1; then
-        echo "  [skip] fix-ci already has terminal result for PR ${pr_number} SHA ${head_sha:0:8}"
+        echo "  [skip] fix-ci already has terminal result for PR ${pr_number} SHA ${head_sha:0:8}" >&2
       else
         local check_name="CI failure"
         check_name=$(echo "$comments_json" | jq -r \
           --arg pat "$ci_pattern" \
-          '[.[] | select(. | test($pat))] | .[0] | capture("check=(?P<c>[^\"\\s]+)") | .c // "CI failure"' \
+          '[.[] | select(. | test($pat))] | .[0] | capture("check=(?P<c>[^\\s\"<>]+)") | .c // "CI failure"' \
           2>/dev/null || echo "CI failure")
         dispatch_ci_retry "$repo" "$pr_number" "$head_sha" "$check_name"
         dispatched=$(( dispatched + 1 ))
@@ -150,8 +193,11 @@ scan_pr_for_rate_limits() {
     fi
   fi
 
-  # ── Check for fix-reviews rate-limited markers on current HEAD SHA ─────────
-  for intent_type in fix-reviews fix-bot-comment human human-pr rebase; do
+  # ── Check for retryable fix-reviews rate-limited markers on HEAD SHA ───────
+  # Only intents that can reconstruct their full context at retry time.
+  # human and fix-bot-comment are excluded: their USER_INSTRUCTION/COMMENT_BODY
+  # cannot be recovered from the PR's current state.
+  for intent_type in $RETRYABLE_REVIEW_INTENTS; do
     local reviews_pattern="${REVIEWS_MARKER_PREFIX}${pr_number} sha=${head_sha} intent=${intent_type} status=rate-limited"
     if echo "$comments_json" | jq -e --arg pat "$reviews_pattern" '[.[] | select(. | test($pat))] | length > 0' >/dev/null 2>&1; then
       local reset_time
@@ -161,7 +207,14 @@ scan_pr_for_rate_limits() {
         2>/dev/null || true)
 
       if is_reset_in_future "$reset_time"; then
-        echo "  [skip] ${intent_type} rate-limit for PR ${pr_number} not yet cleared (resets ${reset_time})"
+        echo "  [skip] ${intent_type} rate-limit for PR ${pr_number} not yet cleared (resets ${reset_time})" >&2
+        continue
+      fi
+
+      # Skip if a terminal marker was already posted (prior retry ran to completion)
+      local reviews_terminal="${REVIEWS_MARKER_PREFIX}${pr_number} sha=${head_sha} intent=${intent_type} status=(applied|no-changes|failed)"
+      if echo "$comments_json" | jq -e --arg pat "$reviews_terminal" '[.[] | select(. | test($pat))] | length > 0' >/dev/null 2>&1; then
+        echo "  [skip] ${intent_type} already has terminal result for PR ${pr_number} SHA ${head_sha:0:8}" >&2
         continue
       fi
 
@@ -179,7 +232,7 @@ scan_repo() {
   echo "[retry] scanning ${repo}..."
 
   local prs_json
-  prs_json=$(gh api "repos/${repo}/pulls?state=open&per_page=100" \
+  prs_json=$(gh api --paginate "repos/${repo}/pulls?state=open&per_page=100" \
     --jq '[.[] | {number: .number, head_sha: .head.sha}]' 2>/dev/null || echo "[]")
 
   local pr_count
@@ -203,11 +256,23 @@ scan_repo() {
   echo "  dispatched ${total_dispatched} retries from ${repo}"
 }
 
-# list_repos_for_org <org>: list all non-fork repos in the org
+# list_repos_for_org <org>: list all non-fork repos in the org.
+# Hard-errors (non-zero exit) when the list is empty and not in DRY_RUN, since
+# an empty result most likely means a token permission issue rather than a
+# legitimately empty org — silently scanning 0 repos would hide misconfig.
 list_repos_for_org() {
   local org="$1"
-  gh repo list "$org" --limit 200 --json nameWithOwner,isFork \
-    --jq '[.[] | select(.isFork == false) | .nameWithOwner]' 2>/dev/null || echo "[]"
+  local result
+  result=$(gh repo list "$org" --limit 1000 --json nameWithOwner,isFork \
+    --jq '[.[] | select(.isFork == false) | .nameWithOwner]' 2>/dev/null || echo "[]")
+  if [ "$result" = "[]" ] || [ -z "$result" ]; then
+    echo "::warning::No repos found for org '${org}' — check GH_TOKEN has repo read scope" >&2
+    if [ "${DRY_RUN:-false}" != "true" ]; then
+      echo "::error::Aborting: scanning 0 repos would silently miss all rate-limited PRs" >&2
+      exit 1
+    fi
+  fi
+  echo "$result"
 }
 
 main() {

@@ -25,8 +25,9 @@ export PROMPTS_DIR="${PROMPTS_DIR:-prompts/dev-lead}"
 # status=rate-limited is NOT terminal — those runs must be retriable.
 check_idempotency() {
   local comments
-  # Use standalone jq so the mock stub in tests can return raw JSON
-  comments=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" 2>/dev/null \
+  # Use standalone jq so the mock stub in tests can return raw JSON.
+  # --paginate ensures markers on busy PRs (>30 comments) are not missed.
+  comments=$(gh api --paginate "repos/${REPO}/issues/${PR_NUMBER}/comments?per_page=100" 2>/dev/null \
     | jq -r '.[].body' 2>/dev/null || true)
 
   # PR-level exhaustion — blocks regardless of SHA
@@ -49,19 +50,21 @@ check_idempotency() {
 # Intentionally excludes status=rate-limited so rate limit events do not count
 # toward the exhaustion threshold — rate limits are temporary infrastructure
 # events, not evidence of repeated engine errors on this PR's content.
+# --paginate ensures an accurate count even on PRs with >30 comments.
 count_recent_failures() {
   local pattern="${MARKER_PREFIX}[a-f0-9A-F]* status=failed"
-  gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" 2>/dev/null \
+  gh api --paginate "repos/${REPO}/issues/${PR_NUMBER}/comments?per_page=100" 2>/dev/null \
     | jq "[.[] | select(.body | test(\"${pattern}\"))] | length" 2>/dev/null \
     || echo "0"
 }
 
 # has_rate_limited_marker: returns 0 if a status=rate-limited marker already
 # exists for HEAD_SHA on this PR. Used to avoid duplicate rate-limited comments.
+# --paginate ensures the dedup check is accurate on PRs with >30 comments.
 has_rate_limited_marker() {
   local pattern="${MARKER_PREFIX}${HEAD_SHA} status=rate-limited"
   local count
-  count=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" 2>/dev/null \
+  count=$(gh api --paginate "repos/${REPO}/issues/${PR_NUMBER}/comments?per_page=100" 2>/dev/null \
     | jq "[.[] | select(.body | test(\"${pattern}\"))] | length" 2>/dev/null \
     || echo "0")
   [ "${count:-0}" -gt 0 ]
@@ -132,7 +135,9 @@ To re-enable, delete this comment or push a new commit with a substantially diff
 }
 
 # post_rate_limited: posts a status=rate-limited marker with embedded reset
-# time. Skips if a rate-limited marker already exists for HEAD_SHA (dedup).
+# time and check name. Skips if a marker already exists for HEAD_SHA (dedup).
+# The check= field lets the retry cron look up current check-run details when
+# re-dispatching, giving the engine full failure logs/annotations on retry.
 post_rate_limited() {
   # Dedup: don't accumulate multiple rate-limited markers for the same SHA
   if has_rate_limited_marker; then
@@ -147,7 +152,11 @@ post_rate_limited() {
     reset_detail=" reset=${reset_time}"
   fi
 
-  local marker="${MARKER_PREFIX}${HEAD_SHA} status=rate-limited${reset_detail} -->"
+  # Embed check name so the retry cron can look up the current check run for logs
+  local check_name
+  check_name=$(echo "${CHECKS_JSON:-[]}" | jq -r '.[0].name // "CI failure"' 2>/dev/null || echo "CI failure")
+
+  local marker="${MARKER_PREFIX}${HEAD_SHA} status=rate-limited${reset_detail} check=${check_name} -->"
   local details="All engines were rate-limited. The retry cron will re-attempt automatically."
   if [ -n "$reset_time" ]; then
     details="${details} Rate limit resets at: \`${reset_time}\`"

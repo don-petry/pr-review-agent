@@ -317,10 +317,11 @@ GHEOF
     all_pass=false
   fi
 
-  if echo "${output_e}" | grep -qi "retry\|rate.?limit"; then
-    echo "[PASS] ${SCENARIO_NAME}(E): output contains retry/rate-limit language"
+  # human intent: no auto-retry (context can't be reconstructed); must tell user to re-trigger
+  if echo "${output_e}" | grep -qiE "rate-limited|re-mention|re-trigger"; then
+    echo "[PASS] ${SCENARIO_NAME}(E): output contains rate-limit/re-trigger language"
   else
-    echo "[FAIL] ${SCENARIO_NAME}(E): output missing retry/rate-limit acknowledgment"
+    echo "[FAIL] ${SCENARIO_NAME}(E): output missing rate-limit/re-trigger acknowledgment"
     all_pass=false
   fi
 

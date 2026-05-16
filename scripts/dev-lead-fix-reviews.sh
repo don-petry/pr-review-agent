@@ -19,6 +19,13 @@ if [ -z "$PR_NUMBER" ] && [ "$INTENT_TYPE" != "rebase" ]; then
   exit 1
 fi
 
+# Resolve HEAD_SHA from the PR API when not provided by the triggering event.
+# issue_comment intents (human, fix-bot-comment) only carry pr_number, not head_sha.
+# A resolved SHA ensures rate-limited markers are scannable by the retry cron.
+if [ -z "${HEAD_SHA:-}" ] && [ -n "${PR_NUMBER:-}" ] && [ "${DEV_LEAD_DRY_RUN:-false}" = "false" ]; then
+  HEAD_SHA=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}" --jq '.head.sha' 2>/dev/null || true)
+fi
+
 build_and_run() {
   local template_name="$1"
   local prompt_file="/tmp/dev-lead-${template_name}-prompt-$$.md"
@@ -46,6 +53,22 @@ post_comment() {
   fi
 }
 
+# post_reviews_terminal: writes a terminal status marker after a retryable
+# intent completes. This prevents the retry cron from re-dispatching the same
+# intent on subsequent runs when the SHA hasn't changed.
+post_reviews_terminal() {
+  local intent="$1" status="${2:-applied}"
+  local sha_part=""
+  [ -n "${HEAD_SHA:-}" ] && sha_part=" sha=${HEAD_SHA}"
+  local marker="${REVIEWS_MARKER_PREFIX}${PR_NUMBER}${sha_part} intent=${intent} status=${status} -->"
+  if [ "$DEV_LEAD_DRY_RUN" = "true" ]; then
+    echo "[dry-run] would post reviews terminal marker: intent=${intent} status=${status}"
+    return 0
+  fi
+  # Best-effort: don't fail the overall script if the marker post fails
+  gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$marker" 2>/dev/null || true
+}
+
 # has_reviews_rate_limited_marker: returns 0 if a rate-limited marker for this
 # intent+SHA already exists on the PR (dedup check).
 has_reviews_rate_limited_marker() {
@@ -54,14 +77,16 @@ has_reviews_rate_limited_marker() {
   [ -z "$sha" ] && return 1  # no SHA means no dedup possible
   local pattern="${REVIEWS_MARKER_PREFIX}${PR_NUMBER} sha=${sha} intent=${intent} status=rate-limited"
   local count
-  count=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" 2>/dev/null \
+  count=$(gh api --paginate "repos/${REPO}/issues/${PR_NUMBER}/comments?per_page=100" 2>/dev/null \
     | jq "[.[] | select(.body | test(\"${pattern}\"))] | length" 2>/dev/null \
     || echo "0")
   [ "${count:-0}" -gt 0 ]
 }
 
-# post_reviews_rate_limited: posts a rate-limited marker for fix-reviews intents
-# and (for user-triggered intents) a visible acknowledgment comment.
+# post_reviews_rate_limited: posts a rate-limited marker for fix-reviews intents.
+# For retryable intents (fix-reviews, human-pr, rebase), the cron will re-dispatch.
+# For non-retryable intents (human, fix-bot-comment), asks the user to re-trigger
+# since USER_INSTRUCTION/COMMENT_BODY cannot be reconstructed at retry time.
 post_reviews_rate_limited() {
   local intent="$1"
 
@@ -84,7 +109,20 @@ post_reviews_rate_limited() {
   fi
 
   local marker="${REVIEWS_MARKER_PREFIX}${PR_NUMBER}${sha_detail} intent=${intent} status=rate-limited${reset_detail} -->"
-  local retry_msg="The retry cron will re-attempt automatically."
+
+  # Retry message depends on whether the intent can be re-dispatched automatically
+  local retry_msg
+  case "$intent" in
+    fix-reviews|human-pr|rebase)
+      retry_msg="The retry cron will re-attempt automatically."
+      ;;
+    human|fix-bot-comment)
+      retry_msg="Please re-trigger manually (re-mention \`@dev-lead\`) when the rate limit clears — the original request cannot be reconstructed automatically."
+      ;;
+    *)
+      retry_msg="Manual re-trigger may be required."
+      ;;
+  esac
   if [ -n "$reset_time" ]; then
     retry_msg="${retry_msg} Rate limit resets at: \`${reset_time}\`"
   fi
@@ -101,16 +139,29 @@ ${retry_msg}"
     gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$marker_body"
   fi
 
-  # For user-triggered intents, post a separate visible acknowledgment so the
-  # user knows their request was received but deferred — not silently dropped.
+  # For user-triggered intents, post a separate visible acknowledgment.
+  # human-pr is retried automatically; human/fix-bot-comment require manual re-trigger.
   case "$intent" in
-    human|human-pr)
+    human-pr)
       local actor_mention=""
       [ -n "${ACTOR:-}" ] && actor_mention="@${ACTOR} "
       local reset_display="${reset_time:-unknown}"
       local ack_body="> [!NOTE]
 > ${actor_mention}I received your request but all AI engines are currently rate-limited. I'll retry automatically once the rate limit clears.
 > Rate limit resets at: \`${reset_display}\`"
+      if [ "$DEV_LEAD_DRY_RUN" = "true" ]; then
+        echo "[dry-run] would post user-visible rate-limit acknowledgment"
+        echo "$ack_body"
+      else
+        gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$ack_body"
+      fi
+      ;;
+    human)
+      local actor_mention=""
+      [ -n "${ACTOR:-}" ] && actor_mention="@${ACTOR} "
+      local reset_display="${reset_time:-unknown}"
+      local ack_body="> [!NOTE]
+> ${actor_mention}I received your request but all AI engines are currently rate-limited. Please re-mention \`@dev-lead\` when the rate limit clears (estimated: \`${reset_display}\`) — I cannot reconstruct the original instruction automatically."
       if [ "$DEV_LEAD_DRY_RUN" = "true" ]; then
         echo "[dry-run] would post user-visible rate-limit acknowledgment"
         echo "$ack_body"
@@ -150,6 +201,7 @@ case "$INTENT_TYPE" in
     rc=0
     build_and_run "fix-reviews" || rc=$?
     [ "$rc" -eq 2 ] && handle_rate_limit "fix-reviews"
+    [ "$rc" -eq 0 ] && post_reviews_terminal "fix-reviews" "applied"
     exit "$rc"
     ;;
   fix-bot-comment)
@@ -187,6 +239,7 @@ case "$INTENT_TYPE" in
     rc=0
     build_and_run "human-pr" || rc=$?
     [ "$rc" -eq 2 ] && handle_rate_limit "human-pr"
+    [ "$rc" -eq 0 ] && post_reviews_terminal "human-pr" "applied"
     exit "$rc"
     ;;
   rebase)
@@ -207,6 +260,7 @@ case "$INTENT_TYPE" in
     rc=0
     build_and_run "rebase" || rc=$?
     [ "$rc" -eq 2 ] && handle_rate_limit "rebase"
+    [ "$rc" -eq 0 ] && post_reviews_terminal "rebase" "applied"
     exit "$rc"
     ;;
   *)

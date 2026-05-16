@@ -192,7 +192,7 @@ GHEOF
   [[ "$output" == *"intent=fix-reviews"* ]]
 }
 
-@test "fix-reviews: rate-limited: human intent posts user-visible acknowledgment" {
+@test "fix-reviews: rate-limited: human intent posts re-trigger ack (not auto-retry)" {
   export INTENT_TYPE="human"
   export DEV_LEAD_DRY_RUN="false"
   export HEAD_SHA="ddd444eee555"
@@ -217,6 +217,8 @@ case "$ARGS" in
     echo "[]" ;;
   *"pr comment"*)
     echo "COMMENT_POSTED: $ARGS"; exit 0 ;;
+  *"pulls/"*)
+    echo '{"head":{"sha":"ddd444eee555"}}' ;;
   *) echo "{}" ;;
 esac
 GHEOF
@@ -225,9 +227,9 @@ GHEOF
   run bash "$FIX_REVIEWS_SCRIPT"
 
   [ "$status" -eq 2 ]
-  # Should have user-visible acknowledgment comment
   [[ "$output" == *"rate-limited"* ]]
-  [[ "$output" == *"retry"* ]]
+  # human intent must tell user to re-trigger manually (can't reconstruct instruction)
+  [[ "$output" == *"re-trigger"* || "$output" == *"re-mention"* ]]
 }
 
 @test "fix-reviews: rate-limited: human-pr intent posts user-visible acknowledgment" {
@@ -348,4 +350,16 @@ STUB
 
   [ "$status" -eq 2 ]
   [[ "$output" == *"skipping duplicate"* ]]
+}
+
+@test "fix-reviews: terminal marker written after successful fix-reviews run" {
+  export INTENT_TYPE="fix-reviews"
+  export DEV_LEAD_DRY_RUN="true"
+  export HEAD_SHA="ddd444eee555"
+
+  run bash "$FIX_REVIEWS_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  # In dry-run mode, the terminal marker post is announced
+  [[ "$output" == *"terminal marker"* || "$output" == *"[dry-run]"* ]]
 }
