@@ -152,3 +152,200 @@ teardown() {
 
   [ "$status" -eq 1 ]
 }
+
+# ── rate-limit handling tests ─────────────────────────────────────────────────
+
+@test "fix-reviews: rate-limited: engine exit 2 posts rate-limited marker" {
+  export INTENT_TYPE="fix-reviews"
+  export DEV_LEAD_DRY_RUN="false"
+  export HEAD_SHA="ddd444eee555"
+
+  # All engines rate-limited
+  for engine in claude gemini copilot; do
+    cat > "$STUB_BIN_DIR/$engine" << 'STUB'
+#!/usr/bin/env bash
+echo "rate limit exceeded"
+exit 1
+STUB
+    chmod +x "$STUB_BIN_DIR/$engine"
+  done
+
+  cat > "$STUB_BIN_DIR/gh" << 'GHEOF'
+#!/usr/bin/env bash
+ARGS="$*"
+case "$ARGS" in
+  *"graphql"*)
+    echo '{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[]}}}}}' ;;
+  *"api"*"repos/"*"issues/"*)
+    echo "[]" ;;
+  *"pr comment"*)
+    echo "COMMENT_POSTED: $ARGS"; exit 0 ;;
+  *) echo "{}" ;;
+esac
+GHEOF
+  chmod +x "$STUB_BIN_DIR/gh"
+
+  run bash "$FIX_REVIEWS_SCRIPT"
+
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"rate-limited"* ]]
+  [[ "$output" == *"intent=fix-reviews"* ]]
+}
+
+@test "fix-reviews: rate-limited: human intent posts user-visible acknowledgment" {
+  export INTENT_TYPE="human"
+  export DEV_LEAD_DRY_RUN="false"
+  export HEAD_SHA="ddd444eee555"
+  export ACTOR="donpetry"
+  export USER_INSTRUCTION="Please fix the failing tests"
+
+  # All engines rate-limited
+  for engine in claude gemini copilot; do
+    cat > "$STUB_BIN_DIR/$engine" << 'STUB'
+#!/usr/bin/env bash
+echo "hit your limit"
+exit 1
+STUB
+    chmod +x "$STUB_BIN_DIR/$engine"
+  done
+
+  cat > "$STUB_BIN_DIR/gh" << 'GHEOF'
+#!/usr/bin/env bash
+ARGS="$*"
+case "$ARGS" in
+  *"api"*"repos/"*"issues/"*)
+    echo "[]" ;;
+  *"pr comment"*)
+    echo "COMMENT_POSTED: $ARGS"; exit 0 ;;
+  *) echo "{}" ;;
+esac
+GHEOF
+  chmod +x "$STUB_BIN_DIR/gh"
+
+  run bash "$FIX_REVIEWS_SCRIPT"
+
+  [ "$status" -eq 2 ]
+  # Should have user-visible acknowledgment comment
+  [[ "$output" == *"rate-limited"* ]]
+  [[ "$output" == *"retry"* ]]
+}
+
+@test "fix-reviews: rate-limited: human-pr intent posts user-visible acknowledgment" {
+  export INTENT_TYPE="human-pr"
+  export DEV_LEAD_DRY_RUN="false"
+  export HEAD_SHA="ddd444eee555"
+  export ACTOR="donpetry"
+  export PR_TITLE="Test PR"
+  export PR_DESCRIPTION="A description"
+
+  # Track how many times pr comment is called (marker + ack = 2 calls for human-pr)
+  local comment_count_file
+  comment_count_file=$(mktemp)
+  echo "0" > "$comment_count_file"
+
+  for engine in claude gemini copilot; do
+    cat > "$STUB_BIN_DIR/$engine" << 'STUB'
+#!/usr/bin/env bash
+echo "quota exceeded"
+exit 1
+STUB
+    chmod +x "$STUB_BIN_DIR/$engine"
+  done
+
+  cat > "$STUB_BIN_DIR/gh" << GHEOF
+#!/usr/bin/env bash
+ARGS="\$*"
+case "\$ARGS" in
+  *"graphql"*)
+    echo '{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[]}}}}}' ;;
+  *"api"*"repos/"*"issues/"*)
+    echo "[]" ;;
+  *"pr comment"*)
+    count=\$(cat "${comment_count_file}")
+    echo \$((count + 1)) > "${comment_count_file}"
+    echo "COMMENT_POSTED #\$((count + 1))"; exit 0 ;;
+  *) echo "{}" ;;
+esac
+GHEOF
+  chmod +x "$STUB_BIN_DIR/gh"
+
+  run bash "$FIX_REVIEWS_SCRIPT"
+
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"rate-limited"* ]]
+  # human-pr should post 2 comments: the rate-limited marker + the user acknowledgment
+  local final_count
+  final_count=$(cat "$comment_count_file")
+  rm -f "$comment_count_file"
+  [ "$final_count" -ge 2 ]
+}
+
+@test "fix-reviews: rate-limited: fix-bot-comment posts rate-limited marker" {
+  export INTENT_TYPE="fix-bot-comment"
+  export DEV_LEAD_DRY_RUN="false"
+  export HEAD_SHA="ddd444eee555"
+  export COMMENT_BODY="SonarQube found issues"
+
+  for engine in claude gemini copilot; do
+    cat > "$STUB_BIN_DIR/$engine" << 'STUB'
+#!/usr/bin/env bash
+echo "rate limit exceeded"
+exit 1
+STUB
+    chmod +x "$STUB_BIN_DIR/$engine"
+  done
+
+  cat > "$STUB_BIN_DIR/gh" << 'GHEOF'
+#!/usr/bin/env bash
+ARGS="$*"
+case "$ARGS" in
+  *"api"*"repos/"*"issues/"*)
+    echo "[]" ;;
+  *"pr comment"*)
+    echo "COMMENT_POSTED"; exit 0 ;;
+  *) echo "{}" ;;
+esac
+GHEOF
+  chmod +x "$STUB_BIN_DIR/gh"
+
+  run bash "$FIX_REVIEWS_SCRIPT"
+
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"rate-limited"* ]]
+}
+
+@test "fix-reviews: rate-limited dedup: existing marker for same SHA+intent skips duplicate" {
+  export INTENT_TYPE="fix-reviews"
+  export DEV_LEAD_DRY_RUN="false"
+  export HEAD_SHA="ddd444eee555"
+
+  # Returns existing rate-limited marker for this sha+intent
+  cat > "$STUB_BIN_DIR/gh" << 'GHEOF'
+#!/usr/bin/env bash
+ARGS="$*"
+case "$ARGS" in
+  *"graphql"*)
+    echo '{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[]}}}}}' ;;
+  *"api"*"repos/"*"issues/"*)
+    echo '[{"body":"<!-- dev-lead-fix-reviews pr=54 sha=ddd444eee555 intent=fix-reviews status=rate-limited -->"}]' ;;
+  *"pr comment"*)
+    echo "COMMENT_POSTED"; exit 0 ;;
+  *) echo "{}" ;;
+esac
+GHEOF
+  chmod +x "$STUB_BIN_DIR/gh"
+
+  for engine in claude gemini copilot; do
+    cat > "$STUB_BIN_DIR/$engine" << 'STUB'
+#!/usr/bin/env bash
+echo "rate limit exceeded"
+exit 1
+STUB
+    chmod +x "$STUB_BIN_DIR/$engine"
+  done
+
+  run bash "$FIX_REVIEWS_SCRIPT"
+
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"skipping duplicate"* ]]
+}

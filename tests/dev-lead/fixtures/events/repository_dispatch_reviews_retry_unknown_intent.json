@@ -1,0 +1,12 @@
+{
+  "_test_expected_intent": "skip",
+  "action": "dev-lead-reviews-retry",
+  "client_payload": {
+    "pr_number": 42,
+    "head_sha": "abc123def456",
+    "repo": "petry-projects/.github-private",
+    "intent_type": "totally-unknown"
+  },
+  "repository": { "full_name": "petry-projects/.github-private" },
+  "sender": { "login": "github-actions[bot]", "type": "Bot" }
+}
