@@ -95,11 +95,11 @@ for repo in "${repos[@]}"; do
   total_workflows=$(( total_workflows + wf_count ))
 
   while IFS=$'\t' read -r wf_id wf_file; do
+    # Note: GitHub caps created>= queries at 1,000 results even with --paginate.
+    # At >1,000 runs/window (>143/day) older runs are silently omitted.
     if ! runs_raw=$(gh api \
       "repos/${repo}/actions/workflows/${wf_id}/runs?per_page=100&created=>=${CUTOFF}" \
       --paginate \
-      # Note: GitHub caps created>= queries at 1,000 results even with --paginate.
-      # At >1,000 runs/window (>143/day) older runs are silently omitted.
       --jq '.workflow_runs | map({
         run_number: .run_number,
         conclusion: .conclusion,
