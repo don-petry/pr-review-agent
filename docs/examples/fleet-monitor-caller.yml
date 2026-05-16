@@ -1,9 +1,11 @@
 # fleet-monitor-caller.yml — copy into .github/workflows/ of any repo
 # that participates in the Actions Fleet Monitor.
 #
+# This calls the shared monitor in .github-private, which discovers and
+# reports on every active workflow in the calling repo.
+#
 # Requirements:
 #   - DON_PETRY_BOT_GH_PAT must be available as an org secret (it is).
-#   - Set workflow_file to the filename of the workflow you want to monitor.
 #
 name: Actions Fleet Monitor
 
@@ -23,6 +25,5 @@ jobs:
     uses: petry-projects/.github-private/.github/workflows/actions-fleet-monitor.yml@main
     with:
       workflow_repo: ${{ github.repository }}
-      workflow_file: my-workflow.yml   # <-- change to the workflow you want to monitor
       lookback_days: ${{ inputs.lookback_days || '1' }}
     secrets: inherit
