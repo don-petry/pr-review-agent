@@ -184,7 +184,7 @@ generate_report() {
     while IFS= read -r wf; do
       local count
       count=$(awk -F'\t' -v w="$wf" '$3 == w && $6 > 0' "$filtered" | wc -l | tr -d ' ')
-      printf '- `%s` — failing in **%s** repos\n' "$wf" "$count"
+      printf -- '- `%s` — failing in **%s** repos\n' "$wf" "$count"
     done <<< "$systemic"
     printf '\n'
   fi
