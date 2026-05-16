@@ -8,7 +8,9 @@
 # workflow has failed runs.
 #
 # Env vars consumed:
-#   GH_TOKEN        — must have actions:read across the org; consumed by gh CLI
+#   GH_TOKEN        — PAT with actions:read across the org, consumed by gh CLI;
+#                     intentionally a PAT (not GITHUB_TOKEN) because the default
+#                     Actions token lacks cross-org actions:read
 #   GH_PAT_FALLBACK — optional secondary token if primary lacks org-level access
 #   ORG             — GitHub org to scan (default: petry-projects)
 #   LOOKBACK_DAYS   — days of history to consider (default: 1)
@@ -96,6 +98,8 @@ for repo in "${repos[@]}"; do
     if ! runs_raw=$(gh api \
       "repos/${repo}/actions/workflows/${wf_id}/runs?per_page=100&created=>=${CUTOFF}" \
       --paginate \
+      # Note: GitHub caps created>= queries at 1,000 results even with --paginate.
+      # At >1,000 runs/window (>143/day) older runs are silently omitted.
       --jq '.workflow_runs | map({
         run_number: .run_number,
         conclusion: .conclusion,
