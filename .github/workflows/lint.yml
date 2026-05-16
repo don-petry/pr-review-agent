@@ -19,7 +19,9 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: shellcheck
-        run: shellcheck scripts/fleet_monitor.sh scripts/fleet_report.sh
+        # --severity=warning: SC2016 (info) fires on printf '`%s`' where backticks
+        # are literal markdown, not shell expressions — suppress info-level noise.
+        run: shellcheck --severity=warning scripts/fleet_monitor.sh scripts/fleet_report.sh
 
   bats:
     runs-on: ubuntu-latest
