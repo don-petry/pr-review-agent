@@ -107,13 +107,19 @@ for repo in "${repos[@]}"; do
         html_url: .html_url,
         duration_s: ((.updated_at | fromdate) - (.created_at | fromdate) | floor)
       })' 2>/dev/null); then
-      echo "::warning::Cannot read runs for ${repo}/${wf_file} — skipping"
+      echo "::warning::Cannot read runs for ${repo}/${wf_file} — recording as ERROR"
+      # Record an ERROR sentinel so the report shows this workflow as unresolvable
+      # rather than silently omitting it (which could produce a falsely clean result).
+      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+        "6" "$repo" "$wf_file" "?" "" "" "" "error" "0" "0" "ERROR" "0" \
+        >> "$metrics_file"
       continue
     fi
-    runs_json=$(echo "$runs_raw" | jq -s 'add // []')
+    # Exclude queued/in_progress runs — only completed conclusions give valid metrics.
+    runs_json=$(echo "$runs_raw" | jq -s 'add // [] | [.[] | select(.conclusion != null)]')
 
     total=$(echo "$runs_json" | jq 'length')
-    failed=$(echo "$runs_json" | jq '[.[] | select(.conclusion == "failure")] | length')
+    failed=$(echo "$runs_json" | jq '[.[] | select(.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "action_required")] | length')
     success=$(echo "$runs_json" | jq '[.[] | select(.conclusion == "success")] | length')
     cancelled=$(echo "$runs_json" | jq '[.[] | select(.conclusion == "cancelled")] | length')
 
@@ -121,11 +127,15 @@ for repo in "${repos[@]}"; do
       rate_int=$(( failed * 100 / total ))
       rate_display=$(awk -v f="$failed" -v t="$total" \
         'BEGIN { pct = f * 100 / t; printf (pct == int(pct)) ? "%d%%" : "%.1f%%", pct }')
-      if   [ "$rate_int" -eq 0 ];  then label="HEALTHY";  sort_key=3
-      elif [ "$rate_int" -gt 50 ]; then label="CRITICAL"; sort_key=0
-      elif [ "$rate_int" -gt 20 ]; then label="DEGRADED"; sort_key=1
-      else                               label="WARNING";  sort_key=2
-      fi
+      # Use exact float comparison so 1/200 = 0.5% correctly classifies as WARNING,
+      # not HEALTHY (which integer truncation would produce).
+      read -r label sort_key < <(awk -v f="$failed" -v t="$total" 'BEGIN {
+        pct = f * 100 / t
+        if (f == 0)    { print "HEALTHY 3" }
+        else if (pct > 50) { print "CRITICAL 0" }
+        else if (pct > 20) { print "DEGRADED 1" }
+        else               { print "WARNING 2"  }
+      }')
     else
       rate_int=0
       rate_display="n/a"
@@ -157,7 +167,7 @@ for repo in "${repos[@]}"; do
           printf '| #%s | %s | %s | [view](%s) |\n' \
             "$run_num" "${created_at%%T*}" "$(fmt_dur "$dur_s")" "$url"
         done < <(echo "$runs_json" | jq -r '
-          [.[] | select(.conclusion == "failure")] | sort_by(.run_number) | reverse[] |
+          [.[] | select(.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "action_required")] | sort_by(.run_number) | reverse[] |
           [(.run_number | tostring), .created_at, (.duration_s | tostring), .html_url] | @tsv')
       } >> "$failed_file"
     fi
