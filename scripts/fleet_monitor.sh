@@ -8,11 +8,12 @@
 # workflow has failed runs.
 #
 # Env vars consumed:
-#   GH_TOKEN        — must have actions:read across the org
+#   GH_TOKEN        — must have actions:read across the org; consumed by gh CLI
+#   GH_PAT_FALLBACK — optional secondary token if primary lacks org-level access
 #   ORG             — GitHub org to scan (default: petry-projects)
 #   LOOKBACK_DAYS   — days of history to consider (default: 1)
 #   GITHUB_ENV      — written by Actions runner
-#   GITHUB_STEP_SUMMARY — written by Actions runner
+#   GITHUB_STEP_SUMMARY — written by Actions runner (1 MB hard limit per job)
 
 set -euo pipefail
 
@@ -28,11 +29,20 @@ echo "  Date:     $TODAY"
 echo ""
 
 # ---------------------------------------------------------------------------
-# 0. Token check
+# 0. Token check — fall back to GH_PAT_FALLBACK if org is not reachable
 # ---------------------------------------------------------------------------
 if ! gh api "orgs/${ORG}" >/dev/null 2>&1; then
-  echo "::error::GH_TOKEN cannot access org ${ORG}."
-  exit 1
+  if [ -n "${GH_PAT_FALLBACK:-}" ]; then
+    echo "::warning::GH_TOKEN cannot access org ${ORG} — using GH_PAT_FALLBACK"
+    export GH_TOKEN="$GH_PAT_FALLBACK"
+    if ! gh api "orgs/${ORG}" >/dev/null 2>&1; then
+      echo "::error::GH_PAT_FALLBACK also cannot access org ${ORG}."
+      exit 1
+    fi
+  else
+    echo "::error::GH_TOKEN cannot access org ${ORG} and GH_PAT_FALLBACK is not set."
+    exit 1
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -42,11 +52,15 @@ CUTOFF=$(date -u -d "${LOOKBACK_DAYS} days ago" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null 
   || date -u -v-"${LOOKBACK_DAYS}"d +%Y-%m-%dT%H:%M:%SZ)
 
 echo "Discovering repos in ${ORG}..."
-# --paginate handles multi-page orgs; filter here so we never load archived repos into memory
-mapfile -t repos < <(
-  gh api "orgs/${ORG}/repos?per_page=100&type=all" --paginate \
-    --jq '.[] | select(.archived == false) | .full_name' 2>/dev/null | sort
-)
+repos_raw=$(gh api "orgs/${ORG}/repos?per_page=100&type=all" --paginate \
+  --jq '.[] | select(.archived == false) | .full_name' 2>/dev/null || true)
+
+if [ -z "$repos_raw" ]; then
+  echo "::error::No repos returned — check token has read:org and repo access."
+  exit 1
+fi
+
+mapfile -t repos < <(echo "$repos_raw" | sort)
 repo_count="${#repos[@]}"
 echo "Found ${repo_count} non-archived repos — window: since ${CUTOFF}"
 echo ""
@@ -63,26 +77,6 @@ fmt_dur() {
   fi
 }
 
-status_label() {
-  local rate="$1"
-  if   [ "$(echo "$rate == 0" | bc)" -eq 1 ]; then printf 'HEALTHY'
-  elif [ "$(echo "$rate > 50" | bc)" -eq 1 ]; then printf 'CRITICAL'
-  elif [ "$(echo "$rate > 20" | bc)" -eq 1 ]; then printf 'DEGRADED'
-  else printf 'WARNING'
-  fi
-}
-
-# Sort key: CRITICAL=0, DEGRADED=1, WARNING=2, HEALTHY=3, none=4
-status_sort_key() {
-  case "$1" in
-    CRITICAL) printf '0' ;;
-    DEGRADED) printf '1' ;;
-    WARNING)  printf '2' ;;
-    HEALTHY)  printf '3' ;;
-    *)        printf '4' ;;
-  esac
-}
-
 # ---------------------------------------------------------------------------
 # 3. Collect metrics per repo → per workflow
 # ---------------------------------------------------------------------------
@@ -94,24 +88,35 @@ total_workflows=0
 for repo in "${repos[@]}"; do
   printf '  %s\n' "$repo"
 
-  workflows=$(gh api "repos/${repo}/actions/workflows?per_page=100" \
+  # Paginate workflow list; warn and skip on access errors
+  if ! workflows_raw=$(gh api "repos/${repo}/actions/workflows?per_page=100" --paginate \
     --jq '[.workflows[] | select(.state == "active") | {id: (.id | tostring), file: (.path | split("/") | last)}]' \
-    2>/dev/null || echo '[]')
+    2>/dev/null); then
+    echo "::warning::Cannot read workflows for ${repo} — check token has actions:read"
+    continue
+  fi
+  workflows=$(echo "$workflows_raw" | jq -s 'add // []')
 
   wf_count=$(echo "$workflows" | jq 'length')
   [ "$wf_count" -eq 0 ] && continue
   total_workflows=$(( total_workflows + wf_count ))
 
   while IFS=$'\t' read -r wf_id wf_file; do
-    runs_json=$(gh api \
+    # Paginate run list; warn and skip on access errors
+    if ! runs_raw=$(gh api \
       "repos/${repo}/actions/workflows/${wf_id}/runs?per_page=100&created=>=${CUTOFF}" \
+      --paginate \
       --jq '.workflow_runs | map({
         run_number: .run_number,
         conclusion: .conclusion,
         created_at: .created_at,
         html_url: .html_url,
-        duration_s: ((.updated_at | fromdate) - (.created_at | fromdate))
-      })' 2>/dev/null || echo '[]')
+        duration_s: ((.updated_at | fromdate) - (.created_at | fromdate) | floor)
+      })' 2>/dev/null); then
+      echo "::warning::Cannot read runs for ${repo}/${wf_file} — skipping"
+      continue
+    fi
+    runs_json=$(echo "$runs_raw" | jq -s 'add // []')
 
     total=$(echo "$runs_json" | jq 'length')
     failed=$(echo "$runs_json" | jq '[.[] | select(.conclusion == "failure")] | length')
@@ -119,12 +124,18 @@ for repo in "${repos[@]}"; do
     cancelled=$(echo "$runs_json" | jq '[.[] | select(.conclusion == "cancelled")] | length')
 
     if [ "$total" -gt 0 ]; then
-      rate=$(echo "scale=1; $failed * 100 / $total" | bc)
-      label=$(status_label "$rate")
-      rate_display="${rate}%"
+      rate_int=$(( failed * 100 / total ))
+      rate_display=$(awk -v f="$failed" -v t="$total" \
+        'BEGIN { pct = f * 100 / t; printf (pct == int(pct)) ? "%d%%" : "%.1f%%", pct }')
+      if   [ "$rate_int" -eq 0 ];  then label="HEALTHY";  sort_key=3
+      elif [ "$rate_int" -gt 50 ]; then label="CRITICAL"; sort_key=0
+      elif [ "$rate_int" -gt 20 ]; then label="DEGRADED"; sort_key=1
+      else                               label="WARNING";  sort_key=2
+      fi
     else
       rate_display="n/a"
       label="—"
+      sort_key=4
     fi
 
     read -r p50 p95 < <(echo "$runs_json" | jq -r '
@@ -133,8 +144,6 @@ for repo in "${repos[@]}"; do
       else . as $d | ($d | length) as $n |
         "\($d[$n * 50 / 100 | floor]) \($d[$n * 95 / 100 | floor])"
       end')
-
-    sort_key=$(status_sort_key "$label")
 
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
       "$sort_key" "$repo" "$wf_file" \
@@ -159,7 +168,7 @@ for repo in "${repos[@]}"; do
 done
 
 # ---------------------------------------------------------------------------
-# 4. Build report (table sorted by severity)
+# 4. Build report (sorted by severity: CRITICAL → DEGRADED → WARNING → HEALTHY)
 # ---------------------------------------------------------------------------
 {
   printf '# Actions Fleet Monitor — %s\n\n' "$TODAY"
@@ -188,6 +197,9 @@ rm -f "$metrics_file" "$failed_file"
 # ---------------------------------------------------------------------------
 # 5. Emit step summary and export env flags
 # ---------------------------------------------------------------------------
+# GitHub Step Summary has a 1 MB hard limit per job. At ~200 bytes per row
+# this supports ~5 000 workflows before truncation; monitor report size if
+# the org grows significantly or lookback windows are extended.
 [ -n "${GITHUB_STEP_SUMMARY:-}" ] && cat "$REPORT_FILE" >> "$GITHUB_STEP_SUMMARY"
 
 if [ "$any_failures" -eq 1 ]; then
