@@ -1,4 +1,4 @@
-name: Daily PR Review Health Check
+name: Actions Fleet Monitor
 
 on:
   schedule:
@@ -17,7 +17,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: daily-pr-review-health
+  group: actions-fleet-monitor
   cancel-in-progress: true
 
 jobs:
