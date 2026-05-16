@@ -1,24 +1,26 @@
 # Actions Fleet Monitor
 
-A reusable GitHub Actions workflow that collects run telemetry for any workflow in the org and surfaces it as a Step Summary and (on failure) a GitHub Issue. No external infrastructure required.
+A reusable GitHub Actions workflow that discovers all active workflows in a repo, collects run telemetry for each, and surfaces results as a Step Summary and (on failure) a GitHub Issue. No external infrastructure required.
 
 ## What it measures
 
+For each active workflow in the target repo:
+
 | Signal | Detail |
 |---|---|
-| Failure rate | `failed / total` runs over the lookback window |
-| Duration min / p50 / p95 / max | Computed from `created_at` → `updated_at` on completed runs |
-| Per-run table | Run number, conclusion, date, duration, link |
-| Overall status | `HEALTHY` / `WARNING` (>10%) / `DEGRADED` (>20%) / `CRITICAL` (>50%) |
+| Total / success / failed / cancelled | Run counts over the lookback window |
+| Failure rate | `failed / total` |
+| Duration p50 / p95 | Computed from `created_at` → `updated_at` on completed runs |
+| Status | `HEALTHY` / `WARNING` / `DEGRADED` / `CRITICAL` (see thresholds) |
 
 ## Delivery
 
-- **Step Summary** — written on every run; visible in the Actions UI without leaving GitHub.
-- **GitHub Issue** — opened in `.github-private` when any failures are detected; title includes the monitored workflow and repo.
+- **Step Summary** — fleet table written on every run; visible in the Actions UI without leaving GitHub.
+- **GitHub Issue** — opened in `.github-private` when any workflow has failed runs; title references the monitored repo.
 
 ## Invoking from another repo
 
-Copy [`docs/examples/fleet-monitor-caller.yml`](examples/fleet-monitor-caller.yml) into `.github/workflows/` of the target repo, update `workflow_file`, and commit.
+Copy [`docs/examples/fleet-monitor-caller.yml`](examples/fleet-monitor-caller.yml) into `.github/workflows/` of the target repo and commit. No other configuration needed.
 
 ```yaml
 jobs:
@@ -26,7 +28,6 @@ jobs:
     uses: petry-projects/.github-private/.github/workflows/actions-fleet-monitor.yml@main
     with:
       workflow_repo: ${{ github.repository }}
-      workflow_file: my-workflow.yml
       lookback_days: ${{ inputs.lookback_days || '1' }}
     secrets: inherit
 ```
@@ -37,8 +38,7 @@ jobs:
 
 | Input | Required | Default | Description |
 |---|---|---|---|
-| `workflow_repo` | yes (workflow_call) | `petry-projects/.github-private` | `owner/repo` of the workflow to monitor |
-| `workflow_file` | yes (workflow_call) | `pr-review.yml` | Filename of the workflow to monitor |
+| `workflow_repo` | yes (workflow_call) | `petry-projects/.github-private` | `owner/repo` to monitor — all active workflows discovered automatically |
 | `lookback_days` | no | `1` | Rolling window of run history to inspect |
 
 ## Environment variables (script)
@@ -47,7 +47,6 @@ jobs:
 |---|---|---|
 | `GH_TOKEN` | `secrets.DON_PETRY_BOT_GH_PAT` | PAT with `actions:read` on `WORKFLOW_REPO` |
 | `WORKFLOW_REPO` | workflow input | Target repo |
-| `WORKFLOW_FILE` | workflow input | Target workflow filename |
 | `LOOKBACK_DAYS` | workflow input | Lookback window |
 | `GH_PAT_FALLBACK` | optional secret | Secondary token if primary lacks access |
 
@@ -60,7 +59,7 @@ jobs:
 | `DEGRADED` | > 20% and ≤ 50% |
 | `CRITICAL` | > 50% |
 
-Thresholds are defined in `scripts/pr_review_health.sh` and can be adjusted per-deployment.
+Thresholds are defined in `scripts/fleet_monitor.sh`.
 
 ## Linting
 
