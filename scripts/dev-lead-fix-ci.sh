@@ -9,6 +9,7 @@ set -euo pipefail
 
 source "$(dirname "$0")/engine.sh"
 
+INTENT_TYPE="fix-ci"
 PR_NUMBER="${PR_NUMBER:-}"
 HEAD_SHA="${HEAD_SHA:-}"
 CHECKS_JSON="${CHECKS_JSON:-[]}"
@@ -202,7 +203,7 @@ main() {
     echo "  [fix-ci] cycle $cycle/$MAX_CI_CYCLES"
 
     local engine_rc=0
-    run_writer_with_fallback "$prompt_file" || engine_rc=$?
+    run_writer_with_fallback "$prompt_file" "$(model_for_intent "$INTENT_TYPE")" || engine_rc=$?
 
     if [ "$engine_rc" -ne 0 ]; then
       if [ "$engine_rc" -eq 2 ]; then

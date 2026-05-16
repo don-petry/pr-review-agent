@@ -18,6 +18,21 @@ setup() {
   export PATH="$STUB_BIN_DIR:$PATH"
   export STUB_BIN_DIR
 
+  # Stub curl so copilot_chat returns a 429 rate-limit response for GitHub Models API.
+  # This makes the copilot fallback behave as rate-limited without a real API call.
+  cat > "$STUB_BIN_DIR/curl" << 'CURLEOF'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  if [[ "$arg" == *"models.github.ai"* ]]; then
+    echo '{"error":{"message":"rate limit exceeded","type":"rate_limit"}}'
+    echo "429"
+    exit 0
+  fi
+done
+exec /usr/bin/curl "$@"
+CURLEOF
+  chmod +x "$STUB_BIN_DIR/curl"
+
   # Default env
   export PR_NUMBER="54"
   export HEAD_SHA="ddd444eee555"
@@ -27,6 +42,8 @@ setup() {
   export GITHUB_REPOSITORY="petry-projects/.github-private"
   export BASE_REF="main"
   export ACTOR="donpetry"
+  export COPILOT_GITHUB_TOKEN="stub-token"
+  export COPILOT_API_MODEL="openai/o4-mini"
 
   # Install a graphql-aware gh stub
   cat > "$STUB_BIN_DIR/gh" <<'GHEOF'

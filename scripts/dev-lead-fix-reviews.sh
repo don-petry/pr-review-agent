@@ -28,6 +28,7 @@ fi
 
 build_and_run() {
   local template_name="$1"
+  local model="${2:-$ENGINE_ACTION_MODEL}"
   local prompt_file="/tmp/dev-lead-${template_name}-prompt-$$.md"
   # Export required vars then envsubst
   envsubst < "${PROMPTS_DIR}/${template_name}.md" > "$prompt_file"
@@ -39,7 +40,7 @@ build_and_run() {
   fi
 
   local rc=0
-  run_writer_with_fallback "$prompt_file" || rc=$?
+  run_writer_with_fallback "$prompt_file" "$model" || rc=$?
   rm -f "$prompt_file"
   return "$rc"
 }
@@ -199,7 +200,7 @@ case "$INTENT_TYPE" in
       --jq '.data.repository.pullRequest.reviewThreads.nodes | map(select(.isResolved == false))' 2>/dev/null || echo "[]")
     export OPEN_THREADS_JSON
     rc=0
-    build_and_run "fix-reviews" || rc=$?
+    build_and_run "fix-reviews" "$(model_for_intent "fix-reviews")" || rc=$?
     [ "$rc" -eq 2 ] && handle_rate_limit "fix-reviews"
     [ "$rc" -eq 0 ] && post_reviews_terminal "fix-reviews" "applied"
     exit "$rc"
@@ -208,7 +209,7 @@ case "$INTENT_TYPE" in
     export PR_NUMBER PR_URL="https://github.com/${REPO}/pull/${PR_NUMBER}"
     export REPO ACTOR="${ACTOR:-}" COMMENT_BODY="${COMMENT_BODY:-}" HEAD_SHA
     rc=0
-    build_and_run "fix-bot-comment" || rc=$?
+    build_and_run "fix-bot-comment" "$(model_for_intent "fix-bot-comment")" || rc=$?
     [ "$rc" -eq 2 ] && handle_rate_limit "fix-bot-comment"
     exit "$rc"
     ;;
@@ -216,7 +217,7 @@ case "$INTENT_TYPE" in
     export PR_NUMBER PR_URL="https://github.com/${REPO}/pull/${PR_NUMBER}"
     export REPO ACTOR="${ACTOR:-}" USER_INSTRUCTION="${USER_INSTRUCTION:-}" PR_DESCRIPTION="${PR_DESCRIPTION:-}"
     rc=0
-    build_and_run "human" || rc=$?
+    build_and_run "human" "$(model_for_intent "human")" || rc=$?
     [ "$rc" -eq 2 ] && handle_rate_limit "human"
     exit "$rc"
     ;;
@@ -237,7 +238,7 @@ case "$INTENT_TYPE" in
       --jq '.data.repository.pullRequest.reviewThreads.nodes | map(select(.isResolved == false))' 2>/dev/null || echo "[]")
     export OPEN_THREADS_JSON BASE_REF="${BASE_REF:-main}"
     rc=0
-    build_and_run "human-pr" || rc=$?
+    build_and_run "human-pr" "$(model_for_intent "human-pr")" || rc=$?
     [ "$rc" -eq 2 ] && handle_rate_limit "human-pr"
     [ "$rc" -eq 0 ] && post_reviews_terminal "human-pr" "applied"
     exit "$rc"
@@ -258,7 +259,7 @@ case "$INTENT_TYPE" in
     CONFLICTING_FILES=$(git merge-tree "$(git merge-base HEAD "origin/${BASE_REF}")" HEAD "origin/${BASE_REF}" 2>/dev/null | grep "^changed in both" | awk '{print $NF}' || true)
     export CONFLICTING_FILES
     rc=0
-    build_and_run "rebase" || rc=$?
+    build_and_run "rebase" "$(model_for_intent "rebase")" || rc=$?
     [ "$rc" -eq 2 ] && handle_rate_limit "rebase"
     [ "$rc" -eq 0 ] && post_reviews_terminal "rebase" "applied"
     exit "$rc"

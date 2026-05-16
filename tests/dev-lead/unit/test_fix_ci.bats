@@ -19,6 +19,23 @@ setup() {
   export PATH="$STUB_BIN_DIR:$PATH"
   export STUB_BIN_DIR
 
+  # Stub curl so copilot_chat returns a 429 rate-limit response for GitHub Models API.
+  # This makes the copilot fallback behave as rate-limited without a real API call.
+  cat > "$STUB_BIN_DIR/curl" << 'CURLEOF'
+#!/usr/bin/env bash
+# Detect GitHub Models API calls and return a synthetic 429 response.
+for arg in "$@"; do
+  if [[ "$arg" == *"models.github.ai"* ]]; then
+    echo '{"error":{"message":"rate limit exceeded","type":"rate_limit"}}'
+    echo "429"
+    exit 0
+  fi
+done
+# Non-API curl calls: pass through to system curl
+exec /usr/bin/curl "$@"
+CURLEOF
+  chmod +x "$STUB_BIN_DIR/curl"
+
   # Default environment for fix-ci
   export PR_NUMBER="42"
   export HEAD_SHA="abc123def456"
@@ -27,6 +44,8 @@ setup() {
   export REVIEW_ENGINE="claude"
   export DEV_LEAD_DRY_RUN="true"
   export GH_STUB_COMMENT_BODY=""
+  export COPILOT_GITHUB_TOKEN="stub-token"
+  export COPILOT_API_MODEL="openai/o4-mini"
   # Point to project root for prompts
   cd "$SCRIPT_DIR"
 }

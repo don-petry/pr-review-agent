@@ -90,15 +90,20 @@ _source_engine() {
   [ "$status" -eq 0 ]
 }
 
-@test "writer: copilot falls back to claude in run_writer (internal)" {
-  # When REVIEW_ENGINE=copilot, run_writer internally falls back to claude
+@test "writer: copilot uses copilot_chat directly (no claude fallback)" {
+  # When REVIEW_ENGINE=copilot, run_writer calls copilot_chat — NOT claude.
+  # Removing claude from PATH verifies the old fallback-to-claude bug is gone.
+  export COPILOT_API_MODEL="openai/o4-mini"
+  export COPILOT_GITHUB_TOKEN="stub-token"
   _source_engine "copilot"
-  export STUB_ENGINE_EXIT=0
   export DEV_LEAD_DRY_RUN=false
+  rm -f "$STUB_BIN_DIR/claude"
+  # Override copilot_chat after sourcing so no real curl call is made
+  copilot_chat() { echo "mock copilot text response"; return 0; }
+  export -f copilot_chat
 
   run run_writer "$TEST_PROMPT"
 
-  # Should succeed because the internal claude stub is present
   [ "$status" -eq 0 ]
 }
 
@@ -178,7 +183,7 @@ STUB
 @test "writer: run_writer_with_fallback retries all engines and returns 2 when all rate-limited" {
   _source_engine "claude"
   export DEV_LEAD_DRY_RUN=false
-  # All engines output rate-limit text and exit 1 → run_writer returns 2 for each
+  # claude and gemini stubs output rate-limit text and exit 1 → run_writer returns 2
   for engine in claude gemini; do
     cat > "$STUB_BIN_DIR/$engine" << 'STUB'
 #!/usr/bin/env bash
@@ -187,8 +192,9 @@ exit 1
 STUB
     chmod +x "$STUB_BIN_DIR/$engine"
   done
-  # Add copilot stub (falls back to claude internally)
-  cp "$STUB_BIN_DIR/claude" "$STUB_BIN_DIR/copilot"
+  # copilot calls copilot_chat (a function, not a binary); mock it to rate-limit
+  copilot_chat() { echo "rate limit exceeded"; return 1; }
+  export -f copilot_chat
 
   run run_writer_with_fallback "$TEST_PROMPT"
 
@@ -239,4 +245,60 @@ STUB
   local result
   result=$(cat /tmp/dev-lead-rate-limit-reset)
   [ -z "$result" ]
+}
+
+# ── model_for_intent tests ─────────────────────────────────────────────────────
+
+@test "model_for_intent: human-pr → ENGINE_TRIAGE_MODEL (haiku)" {
+  _source_engine "claude"
+  result=$(model_for_intent "human-pr")
+  [ "$result" = "$ENGINE_TRIAGE_MODEL" ]
+}
+
+@test "model_for_intent: fix-bot-comment → ENGINE_TRIAGE_MODEL (haiku)" {
+  _source_engine "claude"
+  result=$(model_for_intent "fix-bot-comment")
+  [ "$result" = "$ENGINE_TRIAGE_MODEL" ]
+}
+
+@test "model_for_intent: fix-reviews → ENGINE_ACTION_MODEL (sonnet)" {
+  _source_engine "claude"
+  result=$(model_for_intent "fix-reviews")
+  [ "$result" = "$ENGINE_ACTION_MODEL" ]
+}
+
+@test "model_for_intent: fix-ci → ENGINE_ACTION_MODEL (sonnet)" {
+  _source_engine "claude"
+  result=$(model_for_intent "fix-ci")
+  [ "$result" = "$ENGINE_ACTION_MODEL" ]
+}
+
+@test "model_for_intent: rebase → ENGINE_ACTION_MODEL (sonnet)" {
+  _source_engine "claude"
+  result=$(model_for_intent "rebase")
+  [ "$result" = "$ENGINE_ACTION_MODEL" ]
+}
+
+@test "model_for_intent: fix-issue → ENGINE_DEEP_MODEL (sonnet)" {
+  _source_engine "claude"
+  result=$(model_for_intent "fix-issue")
+  [ "$result" = "$ENGINE_DEEP_MODEL" ]
+}
+
+@test "model_for_intent: human → ENGINE_DEEP_MODEL (sonnet)" {
+  _source_engine "claude"
+  result=$(model_for_intent "human")
+  [ "$result" = "$ENGINE_DEEP_MODEL" ]
+}
+
+@test "model_for_intent: unknown intent → ENGINE_ACTION_MODEL (default)" {
+  _source_engine "claude"
+  result=$(model_for_intent "unknown-intent")
+  [ "$result" = "$ENGINE_ACTION_MODEL" ]
+}
+
+@test "model_for_intent: empty intent → ENGINE_ACTION_MODEL (default)" {
+  _source_engine "claude"
+  result=$(model_for_intent "")
+  [ "$result" = "$ENGINE_ACTION_MODEL" ]
 }

@@ -4,11 +4,16 @@ set -euo pipefail
 # Supports: claude, gemini, copilot
 #
 # Sourced by review-one-pr.sh — provides:
-#   run_triage <prompt_file>       — no-tool tier (stdout capture)
-#   run_agentic <prompt_file> <model>  — full-tool tier (stdout)
-#   run_duck <prompt_file> <model>     — cross-engine adversarial (stdout)
+#   run_triage <prompt_file>           — no-tool tier (review-one-pr.sh only)
+#   run_agentic <prompt_file> <model>  — full-tool tier (review-one-pr.sh only)
+#   run_duck <prompt_file> <model>     — adversarial cross-engine (review-one-pr.sh only)
 #   ENGINE_* env vars for model names and labels
 #   DUCK_ENGINE / DUCK_MODEL for rubber-duck cross-engine review
+#
+# Sourced by dev-lead scripts — provides:
+#   model_for_intent <intent>          — select model tier by intent complexity
+#   run_writer <prompt_file> [model]   — write-capable agent run
+#   run_writer_with_fallback <prompt_file> [model]  — run with engine fallback
 
 REVIEW_ENGINE="${REVIEW_ENGINE:-claude}"
 export REVIEW_ENGINE
@@ -445,6 +450,20 @@ parse_reset_time() {
   printf '%s' "${iso:-}" > /tmp/dev-lead-rate-limit-reset
 }
 
+# model_for_intent <intent>
+# Returns the ENGINE_* model variable appropriate for the intent's complexity.
+#   haiku  — human-pr, fix-bot-comment: lightweight checks, short-circuit if nothing to do
+#   sonnet — fix-reviews, fix-ci, rebase: write operations on known-scope diffs
+#   sonnet — fix-issue, human: full agentic feature work (deep = action = sonnet for now)
+model_for_intent() {
+  case "${1:-}" in
+    human-pr|fix-bot-comment)   echo "$ENGINE_TRIAGE_MODEL" ;;
+    fix-reviews|fix-ci|rebase)  echo "$ENGINE_ACTION_MODEL" ;;
+    fix-issue|human)            echo "$ENGINE_DEEP_MODEL"   ;;
+    *)                          echo "$ENGINE_ACTION_MODEL" ;;
+  esac
+}
+
 # run_writer <prompt_file> [model]
 # Full write-access mode for applying code fixes.
 # When DEV_LEAD_DRY_RUN=true: builds prompt but does NOT call engine; exits 0.
@@ -483,15 +502,10 @@ run_writer() {
         < "$prompt_file" | tee "$_tmp" || rc=${PIPESTATUS[0]}
       ;;
     copilot)
-      # Copilot (gh copilot suggest) is text-only — falls back to Claude for write ops
-      echo "::warning::Copilot engine is text-only; falling back to Claude for write operations" >&2
-      local saved="$REVIEW_ENGINE"
-      REVIEW_ENGINE="claude" timeout "$ACTION_TIMEOUT_SEC" claude --print \
-        --model "$model" \
-        --permission-mode acceptEdits \
-        --allowed-tools "Bash,Read,Write,Edit,Grep,Glob" \
-        < "$prompt_file" | tee "$_tmp" || rc=${PIPESTATUS[0]}
-      REVIEW_ENGINE="$saved"
+      # GitHub Models REST API — text-only, no Write/Edit tool access.
+      # The rate-limit text (HTTP 429) is echoed to stdout by copilot_chat so
+      # is_rate_limited() will fire and return exit 2 for engine fallback.
+      copilot_chat "$prompt_file" "$ACTION_TIMEOUT_SEC" | tee "$_tmp" || rc=${PIPESTATUS[0]}
       ;;
   esac
 
