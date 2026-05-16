@@ -90,21 +90,18 @@ _source_engine() {
   [ "$status" -eq 0 ]
 }
 
-@test "writer: copilot uses copilot_chat directly (no claude fallback)" {
-  # When REVIEW_ENGINE=copilot, run_writer calls copilot_chat — NOT claude.
-  # Removing claude from PATH verifies the old fallback-to-claude bug is gone.
+@test "writer: copilot returns exit 2 for write operations (text-only engine)" {
+  # Copilot is text-only and cannot write files. run_writer returns exit 2 so
+  # run_writer_with_fallback exhausts the chain and the retry cron re-triggers.
+  # claude must NOT be called — the old fallback-to-claude bug must stay fixed.
   export COPILOT_API_MODEL="openai/o4-mini"
-  export COPILOT_GITHUB_TOKEN="stub-token"
   _source_engine "copilot"
   export DEV_LEAD_DRY_RUN=false
   rm -f "$STUB_BIN_DIR/claude"
-  # Override copilot_chat after sourcing so no real curl call is made
-  copilot_chat() { echo "mock copilot text response"; return 0; }
-  export -f copilot_chat
 
   run run_writer "$TEST_PROMPT"
 
-  [ "$status" -eq 0 ]
+  [ "$status" -eq 2 ]
 }
 
 @test "writer: run_writer dry-run logs prompt line count" {
@@ -192,9 +189,7 @@ exit 1
 STUB
     chmod +x "$STUB_BIN_DIR/$engine"
   done
-  # copilot calls copilot_chat (a function, not a binary); mock it to rate-limit
-  copilot_chat() { echo "rate limit exceeded"; return 1; }
-  export -f copilot_chat
+  # copilot returns exit 2 directly in run_writer (text-only, no stub needed)
 
   run run_writer_with_fallback "$TEST_PROMPT"
 
@@ -249,56 +244,61 @@ STUB
 
 # ── model_for_intent tests ─────────────────────────────────────────────────────
 
-@test "model_for_intent: human-pr → ENGINE_TRIAGE_MODEL (haiku)" {
+@test "model_for_intent: human-pr → triage tier" {
   _source_engine "claude"
-  result=$(model_for_intent "human-pr")
-  [ "$result" = "$ENGINE_TRIAGE_MODEL" ]
+  [ "$(model_for_intent "human-pr")" = "triage" ]
 }
 
-@test "model_for_intent: fix-bot-comment → ENGINE_TRIAGE_MODEL (haiku)" {
+@test "model_for_intent: fix-bot-comment → triage tier" {
   _source_engine "claude"
-  result=$(model_for_intent "fix-bot-comment")
-  [ "$result" = "$ENGINE_TRIAGE_MODEL" ]
+  [ "$(model_for_intent "fix-bot-comment")" = "triage" ]
 }
 
-@test "model_for_intent: fix-reviews → ENGINE_ACTION_MODEL (sonnet)" {
+@test "model_for_intent: fix-reviews → action tier" {
   _source_engine "claude"
-  result=$(model_for_intent "fix-reviews")
-  [ "$result" = "$ENGINE_ACTION_MODEL" ]
+  [ "$(model_for_intent "fix-reviews")" = "action" ]
 }
 
-@test "model_for_intent: fix-ci → ENGINE_ACTION_MODEL (sonnet)" {
+@test "model_for_intent: fix-ci → action tier" {
   _source_engine "claude"
-  result=$(model_for_intent "fix-ci")
-  [ "$result" = "$ENGINE_ACTION_MODEL" ]
+  [ "$(model_for_intent "fix-ci")" = "action" ]
 }
 
-@test "model_for_intent: rebase → ENGINE_ACTION_MODEL (sonnet)" {
+@test "model_for_intent: rebase → action tier" {
   _source_engine "claude"
-  result=$(model_for_intent "rebase")
-  [ "$result" = "$ENGINE_ACTION_MODEL" ]
+  [ "$(model_for_intent "rebase")" = "action" ]
 }
 
-@test "model_for_intent: fix-issue → ENGINE_DEEP_MODEL (sonnet)" {
+@test "model_for_intent: fix-issue → deep tier" {
   _source_engine "claude"
-  result=$(model_for_intent "fix-issue")
-  [ "$result" = "$ENGINE_DEEP_MODEL" ]
+  [ "$(model_for_intent "fix-issue")" = "deep" ]
 }
 
-@test "model_for_intent: human → ENGINE_DEEP_MODEL (sonnet)" {
+@test "model_for_intent: human → deep tier" {
   _source_engine "claude"
-  result=$(model_for_intent "human")
-  [ "$result" = "$ENGINE_DEEP_MODEL" ]
+  [ "$(model_for_intent "human")" = "deep" ]
 }
 
-@test "model_for_intent: unknown intent → ENGINE_ACTION_MODEL (default)" {
+@test "model_for_intent: unknown intent → action tier (default)" {
   _source_engine "claude"
-  result=$(model_for_intent "unknown-intent")
-  [ "$result" = "$ENGINE_ACTION_MODEL" ]
+  [ "$(model_for_intent "unknown-intent")" = "action" ]
 }
 
-@test "model_for_intent: empty intent → ENGINE_ACTION_MODEL (default)" {
+@test "model_for_intent: empty intent → action tier (default)" {
   _source_engine "claude"
-  result=$(model_for_intent "")
-  [ "$result" = "$ENGINE_ACTION_MODEL" ]
+  [ "$(model_for_intent "")" = "action" ]
+}
+
+@test "model_for_intent: tier resolves to correct model for claude engine" {
+  _source_engine "claude"
+  [ "$(model_for_intent "human-pr")" = "triage" ]
+  # run_writer resolves "triage" → ENGINE_TRIAGE_MODEL for the current engine
+  [ "$ENGINE_TRIAGE_MODEL" = "claude-haiku-4-5-20251001" ]
+}
+
+@test "model_for_intent: tier key is engine-agnostic (same key for gemini)" {
+  _source_engine "gemini"
+  [ "$(model_for_intent "human-pr")" = "triage" ]
+  # ENGINE_TRIAGE_MODEL is now gemini-2.0-flash for this engine
+  [ "$ENGINE_TRIAGE_MODEL" = "gemini-2.0-flash" ]
 }

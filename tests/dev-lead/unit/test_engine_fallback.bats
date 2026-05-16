@@ -92,14 +92,11 @@ STUBEOF
 }
 
 @test "fallback: all rate-limited → returns 2" {
-  # All engines exit 2 (rate-limited). copilot calls copilot_chat directly
-  # (no claude fallback), so all three engines are independent paths.
+  # claude exits 2 (rate-limited), gemini exits 2 (rate-limited),
+  # copilot returns 2 directly in run_writer (text-only, write ops unsupported).
   _make_stub "claude" 2
   _make_stub "gemini" 2
   _source_engine "claude"
-  # Override copilot_chat to simulate copilot being rate-limited (exit 2 from run_writer)
-  copilot_chat() { echo "rate limit exceeded"; return 1; }
-  export -f copilot_chat
 
   run run_writer_with_fallback "$TEST_PROMPT"
 
