@@ -1,26 +1,28 @@
 #!/usr/bin/env bash
-# Daily telemetry check for the PR Review Agent workflow.
+# Telemetry check for a single GitHub Actions workflow.
 #
-# Fetches recent pr-review.yml run data, computes health metrics, and
-# writes a structured markdown report to both GITHUB_STEP_SUMMARY and
-# pr_review_health_report.md. Sets HAS_FAILURES=true in GITHUB_ENV when
-# failed runs are detected.
+# Fetches recent run data, computes health metrics (failure rate, duration
+# percentiles), and writes a structured markdown report to both
+# GITHUB_STEP_SUMMARY and pr_review_health_report.md.
+# Sets HAS_FAILURES=true in GITHUB_ENV when failed runs are detected.
 #
 # Env vars consumed:
-#   GH_TOKEN      — must have actions:read on WORKFLOW_REPO
-#   LOOKBACK_DAYS — days of history to consider (default: 1)
-#   GITHUB_ENV    — written by Actions runner
+#   GH_TOKEN        — must have actions:read on WORKFLOW_REPO
+#   WORKFLOW_REPO   — owner/repo to inspect (default: petry-projects/.github-private)
+#   WORKFLOW_FILE   — workflow filename to inspect (default: pr-review.yml)
+#   LOOKBACK_DAYS   — days of history to consider (default: 1)
+#   GITHUB_ENV      — written by Actions runner
 #   GITHUB_STEP_SUMMARY — written by Actions runner
 
 set -euo pipefail
 
+WORKFLOW_REPO="${WORKFLOW_REPO:-petry-projects/.github-private}"
+WORKFLOW_FILE="${WORKFLOW_FILE:-pr-review.yml}"
 LOOKBACK_DAYS="${LOOKBACK_DAYS:-1}"
-WORKFLOW_REPO="${AGENT_REPO:-petry-projects/.github-private}"
-WORKFLOW_FILE="pr-review.yml"
 REPORT_FILE="pr_review_health_report.md"
 TODAY=$(date -u +%Y-%m-%d)
 
-echo "=== PR Review Agent — Daily Health Check ==="
+echo "=== Actions Fleet Monitor ==="
 echo "  Repo:         $WORKFLOW_REPO"
 echo "  Workflow:     $WORKFLOW_FILE"
 echo "  Lookback:     ${LOOKBACK_DAYS} day(s)"
@@ -127,9 +129,9 @@ fi
 # 4. Build report
 # ---------------------------------------------------------------------------
 {
-  printf '# PR Review Agent Health — %s\n\n' "$TODAY"
-  printf '**Status:** `%s` | **Lookback:** %s day(s) | **Workflow:** `%s`\n\n' \
-    "$overall" "$LOOKBACK_DAYS" "$WORKFLOW_FILE"
+  printf '# Actions Fleet Monitor — %s\n\n' "$TODAY"
+  printf '**Workflow:** `%s` in `%s` | **Status:** `%s` | **Lookback:** %s day(s)\n\n' \
+    "$WORKFLOW_FILE" "$WORKFLOW_REPO" "$overall" "$LOOKBACK_DAYS"
 
   printf '## Summary\n\n'
   printf '| Metric | Value |\n|---|---|\n'
@@ -139,10 +141,10 @@ fi
   printf '| Cancelled | %s |\n' "$cancelled_runs"
   printf '| Failure rate | %s%% |\n' "$failure_rate"
   if [ "$total_runs" -gt 0 ]; then
-    printf '| Duration min | %s |\n' "$(fmt_dur $dur_min)"
-    printf '| Duration p50 | %s |\n' "$(fmt_dur $dur_p50)"
-    printf '| Duration p95 | %s |\n' "$(fmt_dur $dur_p95)"
-    printf '| Duration max | %s |\n' "$(fmt_dur $dur_max)"
+    printf '| Duration min | %s |\n' "$(fmt_dur "$dur_min")"
+    printf '| Duration p50 | %s |\n' "$(fmt_dur "$dur_p50")"
+    printf '| Duration p95 | %s |\n' "$(fmt_dur "$dur_p95")"
+    printf '| Duration max | %s |\n' "$(fmt_dur "$dur_max")"
   fi
 
   printf '\n## Runs\n\n'
@@ -151,7 +153,7 @@ fi
     icon=$(conclusion_icon "$conclusion")
     date_short="${created_at%%T*}"
     printf '| #%s | %s %s | %s | %s | [view](%s) |\n' \
-      "$run_num" "$icon" "$conclusion" "$date_short" "$(fmt_dur $dur_s)" "$url"
+      "$run_num" "$icon" "$conclusion" "$date_short" "$(fmt_dur "$dur_s")" "$url"
   done < <(echo "$runs_json" | jq -r '
     sort_by(.run_number) | reverse[] |
     [(.run_number | tostring), (.conclusion // .status), .created_at, (.duration_s | tostring), .html_url] | @tsv')
@@ -168,4 +170,4 @@ fi
 
 echo ""
 echo "Report written to $REPORT_FILE ($(wc -c < "$REPORT_FILE") bytes)"
-echo "=== Health check complete ==="
+echo "=== Fleet monitor complete ==="
