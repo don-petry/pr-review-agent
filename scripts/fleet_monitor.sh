@@ -113,6 +113,7 @@ for repo in "${repos[@]}"; do
       printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
         "6" "$repo" "$wf_file" "?" "" "" "" "error" "0" "0" "ERROR" "0" \
         >> "$metrics_file"
+      any_failures=1  # ERROR rows represent monitor failures that need attention
       continue
     fi
     # Exclude queued/in_progress runs — only completed conclusions give valid metrics.

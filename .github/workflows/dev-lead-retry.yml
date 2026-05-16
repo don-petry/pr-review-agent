@@ -1,0 +1,54 @@
+name: Dev-Lead Retry (rate-limited)
+# Scans open PRs across the org for status=rate-limited markers and
+# re-dispatches the appropriate dev-lead event once the rate limit clears.
+#
+# Runs every 2 hours (single schedule, no staggered offsets needed since the
+# concurrency group serialises any overlap from GitHub scheduler jitter).
+# Each repo is staggered by 30s during the scan to avoid dispatching all
+# repos simultaneously and hitting the same org-level rate limit again.
+#
+# Phase 2 (fix-ci retry) and Phase 3 (fix-reviews/human-pr/rebase retry) are
+# both handled here since the retry logic is the same for all retryable intents.
+
+on:
+  schedule:
+    - cron: "15 */2 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "If true, log retries but do not dispatch"
+        required: false
+        default: "false"
+        type: string
+      dispatch_delay_sec:
+        description: "Seconds between repo dispatches (default: 30)"
+        required: false
+        default: "30"
+        type: string
+
+# contents: write is required to create repository_dispatch events.
+permissions:
+  contents: write
+
+concurrency:
+  group: dev-lead-retry
+  cancel-in-progress: false
+
+env:
+  GH_TOKEN: ${{ secrets.GH_PAT_WORKFLOWS || secrets.GITHUB_TOKEN }}
+  TARGET_ORG: ${{ vars.TARGET_ORG || 'petry-projects' }}
+  DRY_RUN: ${{ inputs.dry_run || 'false' }}
+  DISPATCH_DELAY_SEC: ${{ inputs.dispatch_delay_sec || '30' }}
+
+jobs:
+  retry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout agent repo
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          token: ${{ secrets.GH_PAT_WORKFLOWS || secrets.GITHUB_TOKEN }}
+
+      - name: Scan and retry rate-limited PRs
+        run: bash scripts/dev-lead-retry.sh
