@@ -6,6 +6,31 @@ on:
     - cron: '0 6 * * *'
   workflow_dispatch:
     inputs:
+      workflow_repo:
+        description: "owner/repo to monitor"
+        required: false
+        default: "petry-projects/.github-private"
+        type: string
+      workflow_file:
+        description: "Workflow filename to monitor (e.g. pr-review.yml)"
+        required: false
+        default: "pr-review.yml"
+        type: string
+      lookback_days:
+        description: "Days of run history to inspect"
+        required: false
+        default: "1"
+        type: string
+  workflow_call:
+    inputs:
+      workflow_repo:
+        description: "owner/repo containing the workflow to monitor"
+        required: true
+        type: string
+      workflow_file:
+        description: "Workflow filename to monitor (e.g. pr-review.yml)"
+        required: true
+        type: string
       lookback_days:
         description: "Days of run history to inspect"
         required: false
@@ -17,7 +42,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: actions-fleet-monitor
+  group: actions-fleet-monitor-${{ inputs.workflow_repo || 'petry-projects/.github-private' }}-${{ inputs.workflow_file || 'pr-review.yml' }}
   cancel-in-progress: true
 
 jobs:
@@ -25,6 +50,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
+      WORKFLOW_REPO: ${{ inputs.workflow_repo || 'petry-projects/.github-private' }}
+      WORKFLOW_FILE: ${{ inputs.workflow_file || 'pr-review.yml' }}
       LOOKBACK_DAYS: ${{ inputs.lookback_days || '1' }}
 
     steps:
@@ -49,10 +76,12 @@ jobs:
               return;
             }
             const today = new Date().toISOString().split('T')[0];
+            const wfRepo = process.env.WORKFLOW_REPO;
+            const wfFile = process.env.WORKFLOW_FILE;
             const issue = await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `PR Review Agent — failures detected ${today}`,
+              title: `${wfFile} (${wfRepo}) — failures detected ${today}`,
               body: report,
               labels: ['health-check', 'automated-report'],
             });
@@ -61,4 +90,4 @@ jobs:
       - name: Annotate clean run
         if: env.HAS_FAILURES != 'true'
         run: |
-          echo "::notice::Health check passed — all runs in the last ${LOOKBACK_DAYS} day(s) are healthy."
+          echo "::notice::Health check passed — ${WORKFLOW_FILE} in ${WORKFLOW_REPO} is healthy over the last ${LOOKBACK_DAYS} day(s)."
