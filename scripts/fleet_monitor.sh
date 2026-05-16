@@ -65,9 +65,9 @@ fmt_dur() {
 
 status_label() {
   local rate="$1"
-  if   [ "$(printf '%s == 0' "$rate" | bc)" -eq 1 ]; then printf 'HEALTHY'
-  elif [ "$(printf '%s > 50' "$rate" | bc)" -eq 1 ]; then printf 'CRITICAL'
-  elif [ "$(printf '%s > 20' "$rate" | bc)" -eq 1 ]; then printf 'DEGRADED'
+  if   [ "$(echo "$rate == 0" | bc)" -eq 1 ]; then printf 'HEALTHY'
+  elif [ "$(echo "$rate > 50" | bc)" -eq 1 ]; then printf 'CRITICAL'
+  elif [ "$(echo "$rate > 20" | bc)" -eq 1 ]; then printf 'DEGRADED'
   else printf 'WARNING'
   fi
 }
@@ -119,7 +119,7 @@ for repo in "${repos[@]}"; do
     cancelled=$(echo "$runs_json" | jq '[.[] | select(.conclusion == "cancelled")] | length')
 
     if [ "$total" -gt 0 ]; then
-      rate=$(printf 'scale=1; %s * 100 / %s' "$failed" "$total" | bc)
+      rate=$(echo "scale=1; $failed * 100 / $total" | bc)
       label=$(status_label "$rate")
       rate_display="${rate}%"
     else
