@@ -123,14 +123,14 @@ gh run list --repo petry-projects/.github-private -w pr-review.yml -L 5
 - The bot account doesn't have **Write** collaborator role on the target repo
   (Read or Triage isn't sufficient for review approvals).
 
-### `gh pr view failed during metadata prefetch` / `Resource not accessible by personal access token (repository.pullRequest.reviewRequests)`
+### `gh pr view failed during metadata prefetch` / `Resource not accessible by personal access token (repository.pullRequest.reviewRequests.nodes.0.requestedReviewer)`
 - The classic PAT is missing the `read:org` scope. This error occurs on any PR
   that has a **team** (not just a user) as a requested reviewer — the
   `reviewRequests.requestedReviewer` GraphQL field requires org-level member
   read access and is hard-blocked without it.
 - Edit the token at **Settings → Developer settings → Tokens (classic) → Edit**
   and check `read:org`. No regeneration needed — the scope update takes effect
-  immediately. See [BOT_SETUP.md → Step 3](BOT_SETUP.md) and
+  immediately. See [BOT_SETUP.md → Step 3](bot-setup.md) and
   [MACHINE_USER_SETUP.md → Troubleshooting](machine-user-setup.md).
 
 ### Reviews not posting
