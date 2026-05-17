@@ -402,11 +402,19 @@ if [ "$TRIAGE_ESCALATE" = "false" ]; then
     fi
 
     if [ "$single_rc" -eq 0 ] && extract_verdict_json "$VERDICT_JSON.raw" "$VERDICT_JSON"; then
-      single_ok=true
-      break
+      EXTRACTED_DECISION=$(jq -r '.decision // ""' "$VERDICT_JSON" 2>/dev/null || true)
+      case "$EXTRACTED_DECISION" in
+        approve|escalate|skip)
+          single_ok=true
+          break
+          ;;
+        *)
+          echo "    [approve] single-review attempt $single_attempt/$SINGLE_REVIEW_MAX_RETRIES produced invalid decision '$EXTRACTED_DECISION' — will retry"
+          ;;
+      esac
+    else
+      echo "    [approve] single-review attempt $single_attempt/$SINGLE_REVIEW_MAX_RETRIES produced no valid JSON (exit $single_rc)"
     fi
-
-    echo "    [approve] single-review attempt $single_attempt/$SINGLE_REVIEW_MAX_RETRIES produced no valid JSON (exit $single_rc)"
     head -20 "$VERDICT_JSON.raw" 2>/dev/null || true
     [ -n "$SINGLE_STDERR" ] && echo "    stderr: $SINGLE_STDERR"
     if [ "$single_attempt" -lt "$SINGLE_REVIEW_MAX_RETRIES" ]; then
