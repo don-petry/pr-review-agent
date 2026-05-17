@@ -541,7 +541,8 @@ run_writer() {
 # run_writer_with_fallback <prompt_file> [tier_or_model]
 # Tries primary engine, falls back through claude → gemini → copilot on rate-limit (exit 2).
 # Re-initializes ENGINE_* vars for each engine so model IDs are always compatible.
-# Only exit 2 triggers fallback; other non-zero exits propagate immediately.
+# Exit 2 (rate-limited) and exit 127 (engine binary not installed) both trigger fallback.
+# Other non-zero exits propagate immediately as real failures.
 run_writer_with_fallback() {
   local prompt_file="$1"
   local tier_or_model="${2:-action}"
@@ -563,8 +564,10 @@ run_writer_with_fallback() {
       export REVIEW_ENGINE="$orig_engine"; _setup_engine_vars "$orig_engine"
       return 0
     fi
-    if [ "$rc" -eq 2 ]; then
-      echo "::warning::$engine rate-limited or unavailable, trying next engine" >&2
+    if [ "$rc" -eq 2 ] || [ "$rc" -eq 127 ]; then
+      # exit 2: rate-limited or text-only engine unavailable for writes
+      # exit 127: engine binary not installed in this environment
+      echo "::warning::$engine unavailable (exit $rc), trying next engine" >&2
       continue
     fi
     export REVIEW_ENGINE="$orig_engine"; _setup_engine_vars "$orig_engine"
