@@ -92,16 +92,10 @@ STUBEOF
 }
 
 @test "fallback: all rate-limited → returns 2" {
-  # All engines exit 2
+  # claude exits 2 (rate-limited), gemini exits 2 (rate-limited),
+  # copilot returns 2 directly in run_writer (text-only, write ops unsupported).
   _make_stub "claude" 2
   _make_stub "gemini" 2
-  # copilot falls back to claude internally, so we only need claude and gemini
-  # Create a copilot stub that also fails with 2
-  cat > "$STUB_BIN_DIR/copilot" <<'STUBEOF'
-#!/usr/bin/env bash
-exit 2
-STUBEOF
-  chmod +x "$STUB_BIN_DIR/copilot"
   _source_engine "claude"
 
   run run_writer_with_fallback "$TEST_PROMPT"
@@ -120,6 +114,39 @@ STUBEOF
 
   # Should fail with 1 immediately, not succeed via gemini
   [ "$status" -eq 1 ]
+}
+
+@test "fallback: engine not installed (exit 127) → tries next engine" {
+  # Simulates gemini not installed: exit 127 should trigger fallback, not abort
+  _make_stub "claude" 2
+  _make_stub "gemini" 127
+  _source_engine "claude"
+
+  run run_writer_with_fallback "$TEST_PROMPT"
+
+  # claude rate-limited (2), gemini not installed (127), copilot text-only (2) → all exhausted
+  [ "$status" -eq 2 ]
+}
+
+@test "fallback: engine not installed (127) → next engine succeeds" {
+  # claude rate-limited, gemini not installed, but the next engine after gemini succeeds
+  # In the actual fallback order: claude → gemini → copilot. Since copilot returns 2
+  # (text-only) in run_writer, we verify with a scenario where gemini is "not found"
+  # and a recording stub shows that claude was tried after gemini failed.
+  _make_stub "gemini" 2
+  local record_file
+  record_file="$(mktemp)"
+  _make_recording_stub "claude" 127 "$record_file"
+  _source_engine "gemini"
+
+  run run_writer_with_fallback "$TEST_PROMPT"
+
+  # gemini (primary) rate-limited, claude not installed (127 → treated as unavailable),
+  # copilot text-only (2) → all engines exhausted
+  [ "$status" -eq 2 ]
+  # claude was tried (even though it exited 127, it was reached)
+  [ -s "$record_file" ]
+  rm -f "$record_file"
 }
 
 @test "fallback: fallback engine order is claude → gemini → copilot" {

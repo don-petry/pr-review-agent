@@ -4,11 +4,16 @@ set -euo pipefail
 # Supports: claude, gemini, copilot
 #
 # Sourced by review-one-pr.sh — provides:
-#   run_triage <prompt_file>       — no-tool tier (stdout capture)
-#   run_agentic <prompt_file> <model>  — full-tool tier (stdout)
-#   run_duck <prompt_file> <model>     — cross-engine adversarial (stdout)
+#   run_triage <prompt_file>           — no-tool tier (review-one-pr.sh only)
+#   run_agentic <prompt_file> <model>  — full-tool tier (review-one-pr.sh only)
+#   run_duck <prompt_file> <model>     — adversarial cross-engine (review-one-pr.sh only)
 #   ENGINE_* env vars for model names and labels
 #   DUCK_ENGINE / DUCK_MODEL for rubber-duck cross-engine review
+#
+# Sourced by dev-lead scripts — provides:
+#   model_for_intent <intent>          — select model tier by intent complexity
+#   run_writer <prompt_file> [model]   — write-capable agent run
+#   run_writer_with_fallback <prompt_file> [model]  — run with engine fallback
 
 REVIEW_ENGINE="${REVIEW_ENGINE:-claude}"
 export REVIEW_ENGINE
@@ -29,62 +34,65 @@ DUCK_TIMEOUT_SEC="${DUCK_TIMEOUT_SEC:-300}"
 RETRY_MAX_ATTEMPTS="${RETRY_MAX_ATTEMPTS:-2}"   # total attempts including first
 RETRY_BASE_DELAY_SEC="${RETRY_BASE_DELAY_SEC:-5}"
 
-case "$REVIEW_ENGINE" in
-  claude)
-    ENGINE_TRIAGE_MODEL="claude-haiku-4-5-20251001"
-    ENGINE_DEEP_MODEL="claude-sonnet-4-6"
-    ENGINE_AUDIT_MODEL="claude-opus-4-7"
-    ENGINE_ACTION_MODEL="claude-sonnet-4-6"
-    ENGINE_SINGLE_MODEL="claude-opus-4-7"
-    ENGINE_LABEL="triage: haiku 4.5 → deep: sonnet 4.6 + duck: o4-mini → audit: opus 4.7"
-    ENGINE_SINGLE_LABEL="single-reviewer mode: opus 4.7"
-    # Cross-engine rubber duck: always the opposite engine
-    DUCK_ENGINE="copilot"
-    DUCK_MODEL="o4-mini"
-    ;;
-  gemini)
-    ENGINE_TRIAGE_MODEL="gemini-2.0-flash"
-    ENGINE_DEEP_MODEL="gemini-1.5-pro"
-    ENGINE_AUDIT_MODEL="gemini-1.5-pro"
-    ENGINE_ACTION_MODEL="gemini-1.5-pro"
-    ENGINE_SINGLE_MODEL="gemini-1.5-pro"
-    ENGINE_LABEL="triage: gemini-2.0-flash → deep: gemini-1.5-pro + duck: sonnet 4.6 → audit: gemini-1.5-pro"
-    ENGINE_SINGLE_LABEL="single-reviewer mode: gemini-1.5-pro"
-    # Cross-engine rubber duck: use Claude for diversity
-    DUCK_ENGINE="claude"
-    DUCK_MODEL="claude-sonnet-4-6"
-    ;;
-  copilot)
-    ENGINE_TRIAGE_MODEL="o4-mini"
-    ENGINE_DEEP_MODEL="o4-mini"
-    ENGINE_AUDIT_MODEL="o4-mini"
-    ENGINE_ACTION_MODEL="o4-mini"
-    ENGINE_SINGLE_MODEL="o4-mini"
-    # GitHub Models API model identifier — must match a model available at
-    # https://models.github.ai (see GitHub Models marketplace).
-    # Override via COPILOT_API_MODEL env var if the default is unavailable.
-    # openai/o4-mini is the April-2025 o4-generation reasoning model; it is
-    # not a typo for o1-mini or gpt-4o-mini.
-    COPILOT_API_MODEL="${COPILOT_API_MODEL:-openai/o4-mini}"
-    export COPILOT_API_MODEL
-    ENGINE_LABEL="triage: o4-mini → deep: o4-mini + duck: sonnet 4.6 → audit: o4-mini (GitHub Models API)"
-    ENGINE_SINGLE_LABEL="single-reviewer mode: o4-mini (GitHub Models API)"
-    # Cross-engine rubber duck: always the opposite engine
-    DUCK_ENGINE="claude"
-    DUCK_MODEL="claude-sonnet-4-6"
-    ;;
-  *)
-    echo "::error::Unknown REVIEW_ENGINE='$REVIEW_ENGINE' (expected: claude, gemini, or copilot)"
-    exit 1
-    ;;
-esac
+# _setup_engine_vars <engine>
+# Sets all ENGINE_* model vars for the given engine name.
+# Called once at source time and again by run_writer_with_fallback when
+# switching engines mid-fallback, so each invocation gets compatible model IDs.
+_setup_engine_vars() {
+  local eng="${1:-$REVIEW_ENGINE}"
+  case "$eng" in
+    claude)
+      ENGINE_TRIAGE_MODEL="claude-haiku-4-5-20251001"
+      ENGINE_DEEP_MODEL="claude-sonnet-4-6"
+      ENGINE_AUDIT_MODEL="claude-opus-4-7"
+      ENGINE_ACTION_MODEL="claude-sonnet-4-6"
+      ENGINE_SINGLE_MODEL="claude-opus-4-7"
+      ENGINE_LABEL="triage: haiku 4.5 → deep: sonnet 4.6 + duck: o4-mini → audit: opus 4.7"
+      ENGINE_SINGLE_LABEL="single-reviewer mode: opus 4.7"
+      DUCK_ENGINE="copilot"
+      DUCK_MODEL="o4-mini"
+      ;;
+    gemini)
+      ENGINE_TRIAGE_MODEL="gemini-2.0-flash"
+      ENGINE_DEEP_MODEL="gemini-1.5-pro"
+      ENGINE_AUDIT_MODEL="gemini-1.5-pro"
+      ENGINE_ACTION_MODEL="gemini-1.5-pro"
+      ENGINE_SINGLE_MODEL="gemini-1.5-pro"
+      ENGINE_LABEL="triage: gemini-2.0-flash → deep: gemini-1.5-pro + duck: sonnet 4.6 → audit: gemini-1.5-pro"
+      ENGINE_SINGLE_LABEL="single-reviewer mode: gemini-1.5-pro"
+      DUCK_ENGINE="claude"
+      DUCK_MODEL="claude-sonnet-4-6"
+      ;;
+    copilot)
+      ENGINE_TRIAGE_MODEL="o4-mini"
+      ENGINE_DEEP_MODEL="o4-mini"
+      ENGINE_AUDIT_MODEL="o4-mini"
+      ENGINE_ACTION_MODEL="o4-mini"
+      ENGINE_SINGLE_MODEL="o4-mini"
+      # GitHub Models API model identifier — must match a model available at
+      # https://models.github.ai (see GitHub Models marketplace).
+      # Override via COPILOT_API_MODEL env var if the default is unavailable.
+      # openai/o4-mini is the April-2025 o4-generation reasoning model; it is
+      # not a typo for o1-mini or gpt-4o-mini.
+      COPILOT_API_MODEL="${COPILOT_API_MODEL:-openai/o4-mini}"
+      export COPILOT_API_MODEL
+      ENGINE_LABEL="triage: o4-mini → deep: o4-mini + duck: sonnet 4.6 → audit: o4-mini (GitHub Models API)"
+      ENGINE_SINGLE_LABEL="single-reviewer mode: o4-mini (GitHub Models API)"
+      DUCK_ENGINE="claude"
+      DUCK_MODEL="claude-sonnet-4-6"
+      ;;
+    *)
+      echo "::error::Unknown REVIEW_ENGINE='$eng' (expected: claude, gemini, or copilot)"
+      return 1
+      ;;
+  esac
+  export ENGINE_TRIAGE_MODEL ENGINE_DEEP_MODEL ENGINE_AUDIT_MODEL
+  export ENGINE_ACTION_MODEL ENGINE_SINGLE_MODEL
+  export ENGINE_LABEL ENGINE_SINGLE_LABEL
+  export DUCK_ENGINE DUCK_MODEL
+}
 
-export ENGINE_TRIAGE_MODEL ENGINE_DEEP_MODEL ENGINE_AUDIT_MODEL
-export ENGINE_ACTION_MODEL ENGINE_SINGLE_MODEL
-export ENGINE_LABEL ENGINE_SINGLE_LABEL
-export DUCK_ENGINE DUCK_MODEL
-# COPILOT_API_MODEL is exported inside the copilot) case above (only set then).
-
+_setup_engine_vars "$REVIEW_ENGINE" || exit 1
 echo "    engine: $REVIEW_ENGINE ($ENGINE_LABEL)"
 
 # is_rate_limited <text>
@@ -446,25 +454,52 @@ parse_reset_time() {
   printf '%s' "${iso:-}" > /tmp/dev-lead-rate-limit-reset
 }
 
-# run_writer <prompt_file> [model]
+# model_for_intent <intent>
+# Returns an engine-agnostic tier key: "triage", "action", or "deep".
+# run_writer resolves the key to the correct model ID for the active engine
+# via ENGINE_TRIAGE_MODEL / ENGINE_ACTION_MODEL / ENGINE_DEEP_MODEL, which are
+# re-initialized per engine by run_writer_with_fallback so fallback engines
+# always get a compatible model ID.
+#   triage — human-pr, fix-bot-comment: lightweight checks, no agentic writes needed
+#   action — fix-reviews, fix-ci, rebase: write operations on known-scope diffs
+#   deep   — fix-issue, human: full agentic feature work
+model_for_intent() {
+  case "${1:-}" in
+    human-pr|fix-bot-comment)   echo "triage" ;;
+    fix-reviews|fix-ci|rebase)  echo "action" ;;
+    fix-issue|human)            echo "deep"   ;;
+    *)                          echo "action" ;;
+  esac
+}
+
+# run_writer <prompt_file> [tier_or_model]
 # Full write-access mode for applying code fixes.
-# When DEV_LEAD_DRY_RUN=true: builds prompt but does NOT call engine; exits 0.
-# Exit codes: 0=success, 1=non-retriable failure, 2=rate-limited
+# tier_or_model: a tier key ("triage", "action", "deep") or a literal model ID.
+#   Tier keys are resolved to the current engine's model via ENGINE_*_MODEL vars,
+#   which run_writer_with_fallback keeps in sync when switching engines.
+# When DEV_LEAD_DRY_RUN=true: logs the prompt size but does NOT call engine; exits 0.
+# Exit codes: 0=success, 1=non-retriable failure, 2=rate-limited or unavailable
 # On exit 2, writes parsed reset timestamp to /tmp/dev-lead-rate-limit-reset.
 run_writer() {
   local prompt_file="$1"
-  local model="${2:-$ENGINE_ACTION_MODEL}"
+  local tier_or_model="${2:-action}"
+
+  # Resolve tier key → current engine's model ID.
+  local model
+  case "$tier_or_model" in
+    triage) model="$ENGINE_TRIAGE_MODEL" ;;
+    deep)   model="$ENGINE_DEEP_MODEL"   ;;
+    action) model="$ENGINE_ACTION_MODEL" ;;
+    *)      model="$tier_or_model"       ;;  # pass-through for literal model strings
+  esac
 
   if [ "${DEV_LEAD_DRY_RUN:-false}" = "true" ]; then
-    echo "  [dry-run] run_writer: would invoke $REVIEW_ENGINE with prompt $(wc -l < "$prompt_file") lines"
+    echo "  [dry-run] run_writer: would invoke $REVIEW_ENGINE ($model) with prompt $(wc -l < "$prompt_file") lines"
     return 0
   fi
 
   # Capture stdout to a temp file so is_rate_limited can inspect it, while
-  # still streaming output to the caller. The old approach read from
-  # /tmp/dev-lead-writer-stderr which was never written (claude --print outputs
-  # to stdout, not stderr), so is_rate_limited never fired and fallback engines
-  # were never tried.
+  # still streaming output to the caller.
   local _tmp rc=0
   _tmp=$(mktemp)
 
@@ -484,15 +519,13 @@ run_writer() {
         < "$prompt_file" | tee "$_tmp" || rc=${PIPESTATUS[0]}
       ;;
     copilot)
-      # Copilot (gh copilot suggest) is text-only — falls back to Claude for write ops
-      echo "::warning::Copilot engine is text-only; falling back to Claude for write operations" >&2
-      local saved="$REVIEW_ENGINE"
-      REVIEW_ENGINE="claude" timeout "$ACTION_TIMEOUT_SEC" claude --print \
-        --model "$model" \
-        --permission-mode acceptEdits \
-        --allowed-tools "Bash,Read,Write,Edit,Grep,Glob" \
-        < "$prompt_file" | tee "$_tmp" || rc=${PIPESTATUS[0]}
-      REVIEW_ENGINE="$saved"
+      # GitHub Models REST API is text-only — no Write/Edit tool access.
+      # Returning exit 2 signals "write engine unavailable" so run_writer_with_fallback
+      # exhausts the chain and the retry cron re-triggers when a write-capable
+      # engine (claude, gemini) is available again.
+      rm -f "$_tmp"
+      echo "::notice::copilot engine is text-only; write operations unavailable — triggering retry" >&2
+      return 2
       ;;
   esac
 
@@ -506,32 +539,43 @@ run_writer() {
   return "$rc"
 }
 
-# run_writer_with_fallback <prompt_file> [model]
-# Tries primary engine, falls back through claude → gemini → copilot on rate-limit.
-# Only rate-limit (exit 2) triggers fallback; other failures propagate immediately.
+# run_writer_with_fallback <prompt_file> [tier_or_model]
+# Tries primary engine, falls back through claude → gemini → copilot on rate-limit (exit 2).
+# Re-initializes ENGINE_* vars for each engine so model IDs are always compatible.
+# Exit 2 (rate-limited) and exit 127 (engine binary not installed) both trigger fallback.
+# Other non-zero exits propagate immediately as real failures.
 run_writer_with_fallback() {
   local prompt_file="$1"
-  local model="${2:-$ENGINE_ACTION_MODEL}"
+  local tier_or_model="${2:-action}"
   local engines=("$REVIEW_ENGINE")
 
   for e in claude gemini copilot; do
     [ "$e" != "$REVIEW_ENGINE" ] && engines+=("$e")
   done
 
+  local orig_engine="$REVIEW_ENGINE"
   for engine in "${engines[@]}"; do
-    local saved="$REVIEW_ENGINE"
+    # Re-initialize ENGINE_* vars for this engine so model tier resolution
+    # in run_writer returns a compatible model ID for the active provider.
     export REVIEW_ENGINE="$engine"
+    _setup_engine_vars "$engine"
     local rc=0
-    run_writer "$prompt_file" "$model" || rc=$?
-    export REVIEW_ENGINE="$saved"
-    [ "$rc" -eq 0 ] && return 0
-    if [ "$rc" -eq 2 ]; then
-      echo "::warning::$engine rate-limited, trying next engine" >&2
+    run_writer "$prompt_file" "$tier_or_model" || rc=$?
+    if [ "$rc" -eq 0 ]; then
+      export REVIEW_ENGINE="$orig_engine"; _setup_engine_vars "$orig_engine"
+      return 0
+    fi
+    if [ "$rc" -eq 2 ] || [ "$rc" -eq 127 ]; then
+      # exit 2: rate-limited or text-only engine unavailable for writes
+      # exit 127: engine binary not installed in this environment
+      echo "::warning::$engine unavailable (exit $rc), trying next engine" >&2
       continue
     fi
+    export REVIEW_ENGINE="$orig_engine"; _setup_engine_vars "$orig_engine"
     return "$rc"
   done
 
+  export REVIEW_ENGINE="$orig_engine"; _setup_engine_vars "$orig_engine"
   echo "::error::All engines rate-limited or unavailable" >&2
   return 2
 }

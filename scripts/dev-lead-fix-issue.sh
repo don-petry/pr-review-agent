@@ -5,6 +5,7 @@ set -euo pipefail
 
 source "$(dirname "$0")/engine.sh"
 
+INTENT_TYPE="fix-issue"
 ISSUE_NUMBER="${ISSUE_NUMBER:-}"
 REPO="${REPO:-${GITHUB_REPOSITORY:-}}"
 DEV_LEAD_DRY_RUN="${DEV_LEAD_DRY_RUN:-false}"
@@ -51,7 +52,7 @@ main() {
   local branch="dev-lead/issue-${ISSUE_NUMBER}-$(date +%Y%m%d-%H%M)"
   git checkout -b "$branch"
 
-  if ! run_writer_with_fallback "$prompt_file"; then
+  if ! run_writer_with_fallback "$prompt_file" "$(model_for_intent "$INTENT_TYPE")"; then
     echo "::error::Engine failed to implement issue #${ISSUE_NUMBER}"
     rm -f "$prompt_file"
     exit 1

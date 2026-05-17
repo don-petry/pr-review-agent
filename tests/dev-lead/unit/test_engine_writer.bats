@@ -90,16 +90,18 @@ _source_engine() {
   [ "$status" -eq 0 ]
 }
 
-@test "writer: copilot falls back to claude in run_writer (internal)" {
-  # When REVIEW_ENGINE=copilot, run_writer internally falls back to claude
+@test "writer: copilot returns exit 2 for write operations (text-only engine)" {
+  # Copilot is text-only and cannot write files. run_writer returns exit 2 so
+  # run_writer_with_fallback exhausts the chain and the retry cron re-triggers.
+  # claude must NOT be called — the old fallback-to-claude bug must stay fixed.
+  export COPILOT_API_MODEL="openai/o4-mini"
   _source_engine "copilot"
-  export STUB_ENGINE_EXIT=0
   export DEV_LEAD_DRY_RUN=false
+  rm -f "$STUB_BIN_DIR/claude"
 
   run run_writer "$TEST_PROMPT"
 
-  # Should succeed because the internal claude stub is present
-  [ "$status" -eq 0 ]
+  [ "$status" -eq 2 ]
 }
 
 @test "writer: run_writer dry-run logs prompt line count" {
@@ -178,7 +180,7 @@ STUB
 @test "writer: run_writer_with_fallback retries all engines and returns 2 when all rate-limited" {
   _source_engine "claude"
   export DEV_LEAD_DRY_RUN=false
-  # All engines output rate-limit text and exit 1 → run_writer returns 2 for each
+  # claude and gemini stubs output rate-limit text and exit 1 → run_writer returns 2
   for engine in claude gemini; do
     cat > "$STUB_BIN_DIR/$engine" << 'STUB'
 #!/usr/bin/env bash
@@ -187,8 +189,7 @@ exit 1
 STUB
     chmod +x "$STUB_BIN_DIR/$engine"
   done
-  # Add copilot stub (falls back to claude internally)
-  cp "$STUB_BIN_DIR/claude" "$STUB_BIN_DIR/copilot"
+  # copilot returns exit 2 directly in run_writer (text-only, no stub needed)
 
   run run_writer_with_fallback "$TEST_PROMPT"
 
@@ -239,4 +240,65 @@ STUB
   local result
   result=$(cat /tmp/dev-lead-rate-limit-reset)
   [ -z "$result" ]
+}
+
+# ── model_for_intent tests ─────────────────────────────────────────────────────
+
+@test "model_for_intent: human-pr → triage tier" {
+  _source_engine "claude"
+  [ "$(model_for_intent "human-pr")" = "triage" ]
+}
+
+@test "model_for_intent: fix-bot-comment → triage tier" {
+  _source_engine "claude"
+  [ "$(model_for_intent "fix-bot-comment")" = "triage" ]
+}
+
+@test "model_for_intent: fix-reviews → action tier" {
+  _source_engine "claude"
+  [ "$(model_for_intent "fix-reviews")" = "action" ]
+}
+
+@test "model_for_intent: fix-ci → action tier" {
+  _source_engine "claude"
+  [ "$(model_for_intent "fix-ci")" = "action" ]
+}
+
+@test "model_for_intent: rebase → action tier" {
+  _source_engine "claude"
+  [ "$(model_for_intent "rebase")" = "action" ]
+}
+
+@test "model_for_intent: fix-issue → deep tier" {
+  _source_engine "claude"
+  [ "$(model_for_intent "fix-issue")" = "deep" ]
+}
+
+@test "model_for_intent: human → deep tier" {
+  _source_engine "claude"
+  [ "$(model_for_intent "human")" = "deep" ]
+}
+
+@test "model_for_intent: unknown intent → action tier (default)" {
+  _source_engine "claude"
+  [ "$(model_for_intent "unknown-intent")" = "action" ]
+}
+
+@test "model_for_intent: empty intent → action tier (default)" {
+  _source_engine "claude"
+  [ "$(model_for_intent "")" = "action" ]
+}
+
+@test "model_for_intent: tier resolves to correct model for claude engine" {
+  _source_engine "claude"
+  [ "$(model_for_intent "human-pr")" = "triage" ]
+  # run_writer resolves "triage" → ENGINE_TRIAGE_MODEL for the current engine
+  [ "$ENGINE_TRIAGE_MODEL" = "claude-haiku-4-5-20251001" ]
+}
+
+@test "model_for_intent: tier key is engine-agnostic (same key for gemini)" {
+  _source_engine "gemini"
+  [ "$(model_for_intent "human-pr")" = "triage" ]
+  # ENGINE_TRIAGE_MODEL is now gemini-2.0-flash for this engine
+  [ "$ENGINE_TRIAGE_MODEL" = "gemini-2.0-flash" ]
 }
