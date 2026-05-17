@@ -245,8 +245,11 @@ case "$INTENT_TYPE" in
     build_and_run "fix-reviews" || rc=$?
     [ "$rc" -eq 2 ] && handle_rate_limit "fix-reviews"
     if [ "$rc" -eq 0 ]; then
-      commit_and_push "fix-reviews"
-      post_reviews_terminal "fix-reviews" "applied"
+      if commit_and_push "fix-reviews"; then
+        post_reviews_terminal "fix-reviews" "applied"
+      else
+        post_reviews_terminal "fix-reviews" "no-changes" "No changes were needed for the open review threads."
+      fi
     fi
     exit "$rc"
     ;;
@@ -300,8 +303,11 @@ case "$INTENT_TYPE" in
     build_and_run "human-pr" || rc=$?
     [ "$rc" -eq 2 ] && handle_rate_limit "human-pr"
     if [ "$rc" -eq 0 ]; then
-      commit_and_push "human-pr"
-      post_reviews_terminal "human-pr" "applied"
+      if commit_and_push "human-pr"; then
+        post_reviews_terminal "human-pr" "applied"
+      else
+        post_reviews_terminal "human-pr" "no-changes" "No changes were needed for this PR."
+      fi
     fi
     exit "$rc"
     ;;
