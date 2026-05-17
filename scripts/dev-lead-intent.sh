@@ -346,6 +346,23 @@ case "$EVENT_NAME" in
     esac
     ;;
 
+  # ── workflow_dispatch ─────────────────────────────────────────────────────
+  workflow_dispatch)
+    if [ -z "$EVENT_PATH" ] || [ ! -f "$EVENT_PATH" ]; then
+      emit_skip "no-event-path"
+      exit 0
+    fi
+    intent_type=$(jq -r '.inputs.intent_type // empty' "$EVENT_PATH" 2>/dev/null || true)
+    pr_number=$(jq -r '.inputs.pr_number // empty' "$EVENT_PATH" 2>/dev/null || true)
+    head_sha=$(jq -r '.inputs.head_sha // empty' "$EVENT_PATH" 2>/dev/null || true)
+    
+    context=$(jq -nc \
+      --argjson pr_number "$pr_number" \
+      --arg head_sha "${head_sha:-}" \
+      '{"pr_number":$pr_number,"head_sha":$head_sha}')
+    emit_intent "$intent_type" "workflow-dispatch" "$context"
+    ;;
+
   # ── everything else ───────────────────────────────────────────────────────
   *)
     emit_skip "not-implemented"
