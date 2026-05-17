@@ -79,18 +79,21 @@ jobs:
           # Expand INTENT_CONTEXT JSON into individual GITHUB_ENV vars so subsequent
           # step env: blocks can reference ${{ env.INTENT_PR_NUMBER }} without fromJson()
           ctx="${INTENT_CONTEXT:-{\}}"
-          echo "INTENT_PR_NUMBER=$(echo "$ctx" | jq -r '.pr_number // ""')" >> "$GITHUB_ENV"
-          echo "INTENT_HEAD_SHA=$(echo "$ctx"  | jq -r '.head_sha // ""')"  >> "$GITHUB_ENV"
-          echo "INTENT_CHECKS=$(echo "$ctx"    | jq -c '.checks // []')"    >> "$GITHUB_ENV"
-          echo "INTENT_ISSUE_NUMBER=$(echo "$ctx" | jq -r '.issue_number // ""')" >> "$GITHUB_ENV"
-          echo "INTENT_ACTOR=$(echo "$ctx" | jq -r '.actor // ""')" >> "$GITHUB_ENV"
-
-          # Use a random delimiter for heredoc to handle multiline bot findings safely
-          # prevents injection if the body contains the delimiter string
           EOF_DELIMITER="EOF_$(dd if=/dev/urandom bs=15 count=1 2>/dev/null | base64 | tr -dc 'a-zA-Z0-9')"
-          echo "INTENT_COMMENT_BODY<<$EOF_DELIMITER" >> "$GITHUB_ENV"
-          echo "$ctx" | jq -r '.body // ""' >> "$GITHUB_ENV"
-          echo "$EOF_DELIMITER" >> "$GITHUB_ENV"
+
+          # Helper to set GITHUB_ENV safely with heredoc
+          set_env() {
+            echo "$1<<$EOF_DELIMITER" >> "$GITHUB_ENV"
+            echo "$2" >> "$GITHUB_ENV"
+            echo "$EOF_DELIMITER" >> "$GITHUB_ENV"
+          }
+
+          set_env "INTENT_PR_NUMBER" "$(echo "$ctx" | jq -r '.pr_number // ""')"
+          set_env "INTENT_HEAD_SHA" "$(echo "$ctx"  | jq -r '.head_sha // ""')"
+          set_env "INTENT_CHECKS" "$(echo "$ctx"    | jq -c '.checks // []')"
+          set_env "INTENT_ISSUE_NUMBER" "$(echo "$ctx" | jq -r '.issue_number // ""')"
+          set_env "INTENT_ACTOR" "$(echo "$ctx" | jq -r '.actor // ""')"
+          set_env "INTENT_COMMENT_BODY" "$(echo "$ctx" | jq -r '.body // ""')"
 
       - name: Skip — log reason
         if: env.INTENT_TYPE == 'skip'
