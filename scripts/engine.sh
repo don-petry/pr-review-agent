@@ -38,7 +38,7 @@ case "$REVIEW_ENGINE" in
     ENGINE_SINGLE_MODEL="claude-opus-4-7"
     ENGINE_LABEL="triage: haiku 4.5 → deep: sonnet 4.6 + duck: o4-mini → audit: opus 4.7"
     ENGINE_SINGLE_LABEL="single-reviewer mode: opus 4.7"
-    # Cross-engine rubber duck: always the opposite engine
+    # Cross-engine rubber duck: use Copilot when Claude is primary
     DUCK_ENGINE="copilot"
     DUCK_MODEL="o4-mini"
     ;;
@@ -67,11 +67,11 @@ case "$REVIEW_ENGINE" in
     # not a typo for o1-mini or gpt-4o-mini.
     COPILOT_API_MODEL="${COPILOT_API_MODEL:-openai/o4-mini}"
     export COPILOT_API_MODEL
-    ENGINE_LABEL="triage: o4-mini → deep: o4-mini + duck: sonnet 4.6 → audit: o4-mini (GitHub Models API)"
+    ENGINE_LABEL="triage: o4-mini → deep: o4-mini + duck: gemini-2.0-flash → audit: o4-mini (GitHub Models API)"
     ENGINE_SINGLE_LABEL="single-reviewer mode: o4-mini (GitHub Models API)"
-    # Cross-engine rubber duck: always the opposite engine
-    DUCK_ENGINE="claude"
-    DUCK_MODEL="claude-sonnet-4-6"
+    # Cross-engine rubber duck: use Gemini when Copilot is primary
+    DUCK_ENGINE="gemini"
+    DUCK_MODEL="gemini-2.0-flash"
     ;;
   *)
     echo "::error::Unknown REVIEW_ENGINE='$REVIEW_ENGINE' (expected: claude, gemini, or copilot)"
@@ -368,8 +368,10 @@ sys.exit(1)
 
 # run_duck <prompt_file> <model>
 # Cross-engine adversarial "rubber duck" review.
-# Always uses a different model family from REVIEW_ENGINE. Output to stdout.
-# Strips the opposing engine's credentials to prevent cross-engine leakage.
+# DUCK_ENGINE is set by engine.sh init: claude→copilot, gemini→claude, copilot→gemini.
+# All three engine branches (claude, gemini, copilot) are reachable — the gemini
+# branch executes when REVIEW_ENGINE=copilot (copilot primary → gemini duck).
+# Output to stdout. Strips non-selected engine credentials to prevent cross-engine leakage.
 run_duck() {
   local prompt_file="$1"
   local model="$2"
