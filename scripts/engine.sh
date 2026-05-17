@@ -163,7 +163,7 @@ run_triage() {
   local prompt_file="$1"
   local attempt=1 rc=0
   local script_dir
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
   while [ "$attempt" -le "$RETRY_MAX_ATTEMPTS" ]; do
     rc=0
     case "$REVIEW_ENGINE" in
@@ -218,7 +218,7 @@ run_agentic() {
   local prompt_file="$1"
   local model="$2"
   local script_dir
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
   case "$REVIEW_ENGINE" in
     claude)
       timeout "$DEEP_TIMEOUT_SEC" claude --print \
@@ -287,7 +287,7 @@ run_duck() {
   local prompt_file="$1"
   local model="$2"
   local script_dir
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
   case "$DUCK_ENGINE" in
     claude)
       unset COPILOT_GITHUB_TOKEN 2>/dev/null || true
@@ -404,7 +404,7 @@ run_writer() {
   local _tmp rc=0
   _tmp=$(mktemp)
   local script_dir
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
   case "$REVIEW_ENGINE" in
     claude)
