@@ -286,7 +286,7 @@ PR_METADATA=$(gh pr view "$PR_URL" --json "$_meta_fields,files" --jq '
 # For Copilot, we must be extremely conservative (4k-8k total context).
 # For Claude/Gemini, we can afford more context.
 if [ "${REVIEW_ENGINE:-claude}" = "copilot" ]; then
-  _diff_limit=100
+  _diff_limit=50
   # Remove the bulky body from metadata for Copilot to save tokens and avoid content filters
   PR_METADATA=$(echo "$PR_METADATA" | jq 'del(.body)')
 else
