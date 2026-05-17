@@ -110,7 +110,7 @@ is_rate_limited() {
   # Build pattern in segments for readability — one category per line.
   local _pat
   _pat="hit your limit|rate[ -]?limit|resets [0-9]+(am|pm)"           # soft cap / throttle
-  _pat="$_pat|usage limit|quota exceeded|too many requests|exceeded.*quota"
+  _pat="$_pat|usage limit|quota exceeded|too many requests|exceeded.*quota|exhausted.*quota"
   _pat="$_pat|([^0-9]|^)429([^0-9]|$)"                               # HTTP 429
   _pat="$_pat|out of.*token|token.*exhaust"                            # token depletion
   _pat="$_pat|overloaded_error|service.*overload|overload.*error"      # service overload
@@ -516,7 +516,7 @@ run_writer() {
         --model "$model" \
         --approval-mode auto_edit \
         --output-format text \
-        < "$prompt_file" | tee "$_tmp" || rc=${PIPESTATUS[0]}
+        < "$prompt_file" 2>&1 | tee "$_tmp" || rc=${PIPESTATUS[0]}
       ;;
     copilot)
       # GitHub Models REST API is text-only — no Write/Edit tool access.
