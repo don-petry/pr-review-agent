@@ -40,7 +40,7 @@ echo "==> $PR_URL"
 #                NEUTRAL covers informational checks that don't gate merging.
 #      failing — anything else (FAILURE, ACTION_REQUIRED, TIMED_OUT, CANCELLED,
 #                STALE, STARTUP_FAILURE, or unknown conclusions)
-PR_SNAPSHOT=$(gh pr view "$PR_URL" --json headRefOid,statusCheckRollup)
+PR_SNAPSHOT=$(gh pr view "$PR_URL" --json headRefOid,statusCheckRollup,reviewDecision)
 PR_HEAD_SHA=$(echo "$PR_SNAPSHOT" | jq -r '.headRefOid')
 export PR_HEAD_SHA
 echo "    head SHA: $PR_HEAD_SHA"
@@ -61,9 +61,12 @@ CI_STATUS=$(echo "$PR_SNAPSHOT" | jq -r '
 ')
 echo "    CI status: $CI_STATUS"
 
+REVIEW_DECISION=$(echo "$PR_SNAPSHOT" | jq -r '.reviewDecision // ""')
+echo "    review decision: $REVIEW_DECISION"
+
 # Exit code 100 is the skip sentinel: the caller treats any 100 exit as a
 # no-op and does not count it against the MAX_PRS review budget.
-# Reasons that produce a skip: already-reviewed-at-head, ci-failing, ci-pending.
+# Reasons that produce a skip: already-reviewed-at-head, ci-failing, ci-pending, changes-requested.
 if [ "$CI_STATUS" = "failing" ]; then
   echo "    skip: CI checks are failing — will re-evaluate after fixes are pushed"
   echo "{\"pr\":\"$PR_URL\",\"sha\":\"$PR_HEAD_SHA\",\"decision\":\"skip\",\"reason\":\"ci-failing\"}"
@@ -72,6 +75,11 @@ fi
 if [ "$CI_STATUS" = "pending" ]; then
   echo "    skip: CI checks still in progress — will re-evaluate when checks complete"
   echo "{\"pr\":\"$PR_URL\",\"sha\":\"$PR_HEAD_SHA\",\"decision\":\"skip\",\"reason\":\"ci-pending\"}"
+  exit 100
+fi
+if [ "$REVIEW_DECISION" = "CHANGES_REQUESTED" ]; then
+  echo "    skip: changes requested — awaiting author response before reviewing"
+  echo "{\"pr\":\"$PR_URL\",\"sha\":\"$PR_HEAD_SHA\",\"decision\":\"skip\",\"reason\":\"changes-requested\"}"
   exit 100
 fi
 
