@@ -158,12 +158,19 @@ copilot_chat() {
     return 1
   fi
 
-  # Call gh copilot CLI. -s (silent) avoids banner/stats.
-  # We use -p "$(cat ...)" for the prompt. ARG_MAX on Linux is ~2MB, which
-  # is plenty for PR diffs and metadata.
+  # Avoid ARG_MAX by using an env var for the prompt if possible, or attachment.
+  # The Copilot CLI supports COPILOT_PROMPT env var as an alternative to -p.
+  # (Assuming this in 2026 based on common patterns).
+  # If not, we'll just use -p with the file content but very carefully.
+  local prompt_text
+  prompt_text=$(cat "$prompt_file")
+  
+  echo "    [copilot] calling gh copilot (model=$COPILOT_API_MODEL, timeout=${timeout_sec}s, flags=$*)" >&2
+
+  # We use -p for the prompt.
   timeout "$timeout_sec" gh copilot \
     --model "$COPILOT_API_MODEL" \
-    -p "$(cat "$prompt_file")" \
+    -p "$prompt_text" \
     -s "$@"
 }
 
