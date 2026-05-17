@@ -46,6 +46,9 @@ cat > /tmp/cascade/review-body.txt << 'BODYEOF'
 ### Summary
 PLACEHOLDER_SUMMARY
 
+### Cross-engine agreement (if deep+duck)
+<If tier is deep+duck and agreement field exists, include this section>
+
 ### Findings
 PLACEHOLDER_FINDINGS_LIST
 

@@ -85,6 +85,12 @@ jobs:
           path: ~/.npm-global
           key: claude-code-${{ env.CLAUDE_CODE_VERSION }}-${{ runner.os }}
 
+      - name: Cache claude-code CLI
+        uses: actions/cache@v5
+        with:
+          path: ~/.npm-global
+          key: claude-code-${{ env.CLAUDE_CODE_VERSION }}-${{ runner.os }}
+
       - name: Install review engine CLIs
         run: |
           set -euo pipefail
