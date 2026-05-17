@@ -494,22 +494,20 @@ wait $DEEP_PID || DEEP_RC=$?
 # Validate primary deep review (required).
 OUTPUT_FILE="/tmp/cascade/deep.json"
 if [ ! -s "$OUTPUT_FILE" ] || ! jq empty "$OUTPUT_FILE" 2>/dev/null; then
-  # Check the model's stdout for a rate-limit or CLI-error message.  We
-  # intentionally do NOT check deep.log (stderr/process noise) to avoid false
-  # positives from PR diff content that happens to mention these keywords in
-  # code or comments.
+  # Check both stdout and stderr for a rate-limit or CLI-error message.
   DEEP_STDOUT_CONTENT=$(cat /tmp/cascade/deep-stdout.txt 2>/dev/null || true)
+  DEEP_STDERR_CONTENT=$(cat /tmp/cascade/deep.log 2>/dev/null || true)
   kill $DUCK_PID 2>/dev/null || true
   wait $DUCK_PID 2>/dev/null || true
   # CLI invocation errors are per-PR failures (exit 1), not engine fallbacks (exit 2).
-  if is_cli_error "$DEEP_STDOUT_CONTENT"; then
+  if is_cli_error "$DEEP_STDOUT_CONTENT" || is_cli_error "$DEEP_STDERR_CONTENT"; then
     echo "    [error] CLI format error — treating as per-PR failure (not a rate limit)"
-    echo "$DEEP_STDOUT_CONTENT"
+    echo "${DEEP_STDOUT_CONTENT:-}${DEEP_STDERR_CONTENT:+ (stderr: $DEEP_STDERR_CONTENT)}"
     exit 1
   fi
-  if is_rate_limited "$DEEP_STDOUT_CONTENT"; then
+  if is_rate_limited "$DEEP_STDOUT_CONTENT" || is_rate_limited "$DEEP_STDERR_CONTENT"; then
     echo "    [tier2] rate limit detected — exiting with code 2 for engine fallback"
-    echo "$DEEP_STDOUT_CONTENT"
+    echo "${DEEP_STDOUT_CONTENT:-}${DEEP_STDERR_CONTENT:+ (stderr: $DEEP_STDERR_CONTENT)}"
     exit 2
   fi
   [ "$DEEP_RC" -ne 0 ] && echo "::warning::deep review process exited $DEEP_RC"
@@ -550,7 +548,7 @@ if [ "$DUCK_VALID" = "true" ]; then
   OUTPUT_FILE="/tmp/cascade/combined.json"
   export DEEP_RESULT DUCK_RESULT OUTPUT_FILE
   run_agentic prompts/synthesize-duck.md "$ENGINE_ACTION_MODEL" \
-    > /tmp/cascade/synth.log 2>&1 || true
+    > /tmp/cascade/synth-stdout.txt 2>/tmp/cascade/synth.log || true
 
   if [ -s "$OUTPUT_FILE" ] && jq empty "$OUTPUT_FILE" 2>/dev/null; then
     COMBINED_DECISION=$(jq -r '.decision' "$OUTPUT_FILE")
@@ -559,8 +557,20 @@ if [ "$DUCK_VALID" = "true" ]; then
     COMBINED_ESCALATE=$(jq -r '.escalate_to_opus' "$OUTPUT_FILE")
     echo "    [tier2b] combined: decision=$COMBINED_DECISION risk=$COMBINED_RISK agreement=$COMBINED_AGREEMENT escalate_to_opus=$COMBINED_ESCALATE"
   else
+    SYNTH_STDOUT=$(cat /tmp/cascade/synth-stdout.txt 2>/dev/null || true)
+    SYNTH_STDERR=$(cat /tmp/cascade/synth.log 2>/dev/null || true)
+    if is_cli_error "$SYNTH_STDOUT" || is_cli_error "$SYNTH_STDERR"; then
+      echo "    [error] CLI format error (synthesis) — treating as per-PR failure"
+      echo "${SYNTH_STDOUT:-}${SYNTH_STDERR:+ (stderr: $SYNTH_STDERR)}"
+      exit 1
+    fi
+    if is_rate_limited "$SYNTH_STDOUT" || is_rate_limited "$SYNTH_STDERR"; then
+      echo "    [tier2b] rate limit detected during synthesis — exiting with code 2 for engine fallback"
+      echo "${SYNTH_STDOUT:-}${SYNTH_STDERR:+ (stderr: $SYNTH_STDERR)}"
+      exit 2
+    fi
     echo "    [tier2b] synthesis failed — falling back to deep review only"
-    cat /tmp/cascade/synth.log 2>/dev/null || true
+    [ -n "$SYNTH_STDERR" ] && echo "    stderr: $SYNTH_STDERR"
     OUTPUT_FILE="/tmp/cascade/deep.json"
     DUCK_VALID=false
     COMBINED_ESCALATE=$(jq -r '.escalate_to_opus' "$OUTPUT_FILE")
@@ -583,8 +593,23 @@ if [ "$COMBINED_ESCALATE" != "true" ]; then
   VERDICT_JSON="/tmp/cascade/cascade-action-verdict.json"
   OUTPUT_FILE="$VERDICT_JSON"
   export OUTPUT_FILE
-  run_agentic prompts/cascade-action.md "$ENGINE_ACTION_MODEL" > "$VERDICT_JSON.raw"
-  extract_verdict_json "$VERDICT_JSON.raw" "$VERDICT_JSON" || { echo "::error::cascade-action did not produce valid JSON"; exit 1; }
+  run_agentic prompts/cascade-action.md "$ENGINE_ACTION_MODEL" > "$VERDICT_JSON.raw" 2>/tmp/cascade/action.log || true
+  if ! extract_verdict_json "$VERDICT_JSON.raw" "$VERDICT_JSON"; then
+    ACTION_STDOUT=$(cat "$VERDICT_JSON.raw" 2>/dev/null || true)
+    ACTION_STDERR=$(cat /tmp/cascade/action.log 2>/dev/null || true)
+    if is_cli_error "$ACTION_STDOUT" || is_cli_error "$ACTION_STDERR"; then
+      echo "    [error] CLI format error (action) — treating as per-PR failure"
+      echo "${ACTION_STDOUT:-}${ACTION_STDERR:+ (stderr: $ACTION_STDERR)}"
+      exit 1
+    fi
+    if is_rate_limited "$ACTION_STDOUT" || is_rate_limited "$ACTION_STDERR"; then
+      echo "    [action] rate limit detected — exiting with code 2 for engine fallback"
+      echo "${ACTION_STDOUT:-}${ACTION_STDERR:+ (stderr: $ACTION_STDERR)}"
+      exit 2
+    fi
+    echo "::error::cascade-action did not produce valid JSON"
+    exit 1
+  fi
   rm -f "$VERDICT_JSON.raw"
 
   # Post the review using the verdict
@@ -603,12 +628,27 @@ DEEP_RESULT="$TIER2_RESULT"
 export DEEP_RESULT
 OUTPUT_FILE="/tmp/cascade/audit.json"
 export OUTPUT_FILE
+
+# Audit tier: separate stdout and stderr to safely detect rate limits without
+# false positives from PR diff content in stdout.
 run_agentic prompts/security-audit.md "$ENGINE_AUDIT_MODEL" \
-  > /tmp/cascade/audit.log 2>&1
+  > /tmp/cascade/audit-stdout.txt 2>/tmp/cascade/audit.log || true
 
 if [ ! -s "$OUTPUT_FILE" ] || ! jq empty "$OUTPUT_FILE" 2>/dev/null; then
+  AUDIT_STDOUT=$(cat /tmp/cascade/audit-stdout.txt 2>/dev/null || true)
+  AUDIT_STDERR=$(cat /tmp/cascade/audit.log 2>/dev/null || true)
+  if is_cli_error "$AUDIT_STDOUT" || is_cli_error "$AUDIT_STDERR"; then
+    echo "    [error] CLI format error (tier 3) — treating as per-PR failure"
+    echo "${AUDIT_STDOUT:-}${AUDIT_STDERR:+ (stderr: $AUDIT_STDERR)}"
+    exit 1
+  fi
+  if is_rate_limited "$AUDIT_STDOUT" || is_rate_limited "$AUDIT_STDERR"; then
+    echo "    [tier3] rate limit detected — exiting with code 2 for engine fallback"
+    echo "${AUDIT_STDOUT:-}${AUDIT_STDERR:+ (stderr: $AUDIT_STDERR)}"
+    exit 2
+  fi
   echo "::warning::security audit did not produce valid JSON at $OUTPUT_FILE"
-  cat /tmp/cascade/audit.log || true
+  [ -s "/tmp/cascade/audit.log" ] && { echo "    stderr:"; cat /tmp/cascade/audit.log; }
   echo "::error::cascade failed at tier 3 for $PR_URL"
   exit 1
 fi
@@ -625,8 +665,24 @@ export FINAL_TIER="audit"
 VERDICT_JSON="/tmp/cascade/cascade-action-verdict-audit.json"
 OUTPUT_FILE="$VERDICT_JSON"
 export OUTPUT_FILE
-run_agentic prompts/cascade-action.md "$ENGINE_ACTION_MODEL" > "$VERDICT_JSON.raw"
-extract_verdict_json "$VERDICT_JSON.raw" "$VERDICT_JSON" || { echo "::error::cascade-action (audit) did not produce valid JSON"; exit 1; }
+
+run_agentic prompts/cascade-action.md "$ENGINE_ACTION_MODEL" > "$VERDICT_JSON.raw" 2>/tmp/cascade/action-audit.log || true
+if ! extract_verdict_json "$VERDICT_JSON.raw" "$VERDICT_JSON"; then
+  ACTION_STDOUT=$(cat "$VERDICT_JSON.raw" 2>/dev/null || true)
+  ACTION_STDERR=$(cat /tmp/cascade/action-audit.log 2>/dev/null || true)
+  if is_cli_error "$ACTION_STDOUT" || is_cli_error "$ACTION_STDERR"; then
+    echo "    [error] CLI format error (action audit) — treating as per-PR failure"
+    echo "${ACTION_STDOUT:-}${ACTION_STDERR:+ (stderr: $ACTION_STDERR)}"
+    exit 1
+  fi
+  if is_rate_limited "$ACTION_STDOUT" || is_rate_limited "$ACTION_STDERR"; then
+    echo "    [action] rate limit detected — exiting with code 2 for engine fallback"
+    echo "${ACTION_STDOUT:-}${ACTION_STDERR:+ (stderr: $ACTION_STDERR)}"
+    exit 2
+  fi
+  echo "::error::cascade-action (audit) did not produce valid JSON"
+  exit 1
+fi
 rm -f "$VERDICT_JSON.raw"
 
 # Post the review using the verdict
