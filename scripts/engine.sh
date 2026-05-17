@@ -101,14 +101,14 @@ is_rate_limited() {
   local text="$1"
   # Build pattern in segments for readability — one category per line.
   local _pat
-  _pat="hit your limit|rate[ -]?limit|resets [0-9]+(am|pm)"           # soft cap / throttle
+  _pat="hit your limit|rate[ -]?limit|resets [0-9]+(am|pm)|reached.*limit" # soft cap / throttle
   _pat="$_pat|usage limit|quota exceeded|too many requests|exceeded.*quota"
   _pat="$_pat|([^0-9]|^)429([^0-9]|$)"                               # HTTP 429
   _pat="$_pat|out of.*token|token.*exhaust"                            # token depletion
   _pat="$_pat|overloaded_error|service.*overload|overload.*error"      # service overload
   _pat="$_pat|([^0-9]|^)529([^0-9]|$)"                               # HTTP 529
   _pat="$_pat|claude.*usage|usage.*claude"                             # Claude-specific cap
-  _pat="$_pat|plan.*limit|subscription.*limit|billing.*limit|daily.*limit|monthly.*limit"
+  _pat="$_pat|plan.*limit|subscription.*limit|billing.*limit|daily.*limit|monthly.*limit|weekly.*limit"
   _pat="$_pat|([^0-9]|^)402([^0-9]|$)"                               # HTTP 402 (payment)
   _pat="$_pat|tokens_limit_reached|body too large|([^0-9]|^)413([^0-9]|$)" # Context / Request size
   printf '%s\n' "$text" | grep -qiE "($_pat)"

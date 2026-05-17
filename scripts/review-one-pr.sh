@@ -339,18 +339,15 @@ unset PR_DIFF PR_METADATA
 
 # Detect error category before JSON validation.
 # Claude Code writes its usage-cap error to stdout (captured in TRIAGE_RESULT);
-# some other providers write to stderr (TRIAGE_LOG) — check both channels.
+# some other providers (like gh copilot) write to stderr (TRIAGE_LOG) — check both.
 TRIAGE_STDERR=$(cat "$TRIAGE_LOG" 2>/dev/null || true)
-# TRIAGE_STDERR is always process output — safe to check unconditionally.
-# TRIAGE_RESULT is gated on rc != 0 to avoid false positives: the triage prompt
-# inlines the full PR diff, so a PR adding "429 rate-limit handling" could
-# produce valid JSON with matching text in signals/summary, incorrectly
-# triggering engine fallback on a healthy call that exited 0.
-if is_rate_limited "$TRIAGE_STDERR"; then
+if is_rate_limited "$TRIAGE_STDERR" || is_rate_limited "$TRIAGE_RESULT"; then
   echo "    [tier1] usage/rate limit detected — exiting with code 2 for engine fallback"
-  echo "    limit message: (stderr: $TRIAGE_STDERR)"
+  [ -n "$TRIAGE_RESULT" ] && echo "    limit message: $TRIAGE_RESULT"
+  [ -n "$TRIAGE_STDERR" ] && echo "    limit stderr: $TRIAGE_STDERR"
   exit 2
 fi
+
 if [ "$TRIAGE_RC" -ne 0 ]; then
   # CLI invocation errors (bad flags, wrong syntax) are per-PR failures — exit 1
   # so the session can continue with the next PR rather than aborting entirely.
@@ -359,24 +356,12 @@ if [ "$TRIAGE_RC" -ne 0 ]; then
     echo "    error message: ${TRIAGE_RESULT:-}${TRIAGE_STDERR:+ (stderr: $TRIAGE_STDERR)}"
     exit 1
   fi
-  # Rate-limit / overload — exit 2 so the caller can fall back to a different engine.
-  if is_rate_limited "$TRIAGE_RESULT"; then
-    echo "    [tier1] usage/rate limit detected — exiting with code 2 for engine fallback"
-    echo "    limit message: ${TRIAGE_RESULT:-}"
-    exit 2
-  fi
 fi
 
 # Hard-fail on triage process exit. Previously this silently synthesized a
-# fake "escalate=true, MEDIUM" verdict, which masked real model regressions
-# (a broken triage prompt or model endpoint would still cost a deep review on
-# every PR while looking healthy). With the session circuit breaker upstream,
-# letting this fail loudly is the right call — the workflow aborts the rest
-# of the session and the next hourly run retries fresh.
+# fake "escalate=true, MEDIUM" verdict, which masked real model regressions.
 if [ "$TRIAGE_RC" -ne 0 ]; then
   echo "::warning::triage exited with code $TRIAGE_RC"
-  # claude --print writes errors to stdout (TRIAGE_RESULT), not stderr — surface
-  # both channels so the actual failure message is always visible in CI logs.
   [ -n "$TRIAGE_RESULT" ] && echo "    triage stdout: $TRIAGE_RESULT"
   [ -n "$TRIAGE_STDERR" ] && echo "    triage stderr: $TRIAGE_STDERR"
   echo "::error::cascade failed at tier 1 (triage process exit $TRIAGE_RC) for $PR_URL"
