@@ -35,6 +35,9 @@
     "MD040": false,
     // MD041: first-line-heading — agents/*.md files are prompt files, not docs.
     "MD041": false,
+    // MD029: ol-prefix — some docs use cross-section sequential numbering (1/2/3)
+    //        that renderers handle correctly but linter expects 1/1/1 style.
+    "MD029": false,
     // MD060: table-column-style — newer rule; many tables use compact style.
     "MD060": false
   },
