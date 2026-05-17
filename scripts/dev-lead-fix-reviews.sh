@@ -26,6 +26,11 @@ if [ -z "${HEAD_SHA:-}" ] && [ -n "${PR_NUMBER:-}" ] && [ "${DEV_LEAD_DRY_RUN:-f
   HEAD_SHA=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}" --jq '.head.sha' 2>/dev/null || true)
 fi
 
+# Checkout the PR branch for modification (Requirement 1)
+if [ "${DEV_LEAD_DRY_RUN:-false}" = "false" ] && [ -n "${PR_NUMBER:-}" ]; then
+  gh pr checkout "$PR_NUMBER" --repo "$REPO"
+fi
+
 build_and_run() {
   local template_name="$1"
   local model="${2:-$ENGINE_ACTION_MODEL}"
@@ -58,16 +63,54 @@ post_comment() {
 # intent completes. This prevents the retry cron from re-dispatching the same
 # intent on subsequent runs when the SHA hasn't changed.
 post_reviews_terminal() {
-  local intent="$1" status="${2:-applied}"
+  local intent="$1" status="${2:-applied}" summary="${3:-}"
   local sha_part=""
   [ -n "${HEAD_SHA:-}" ] && sha_part=" sha=${HEAD_SHA}"
   local marker="${REVIEWS_MARKER_PREFIX}${PR_NUMBER}${sha_part} intent=${intent} status=${status} -->"
+
+  local body="${marker}"
+  if [ -n "$summary" ]; then
+    body="${body}
+## Dev-Lead — ${intent} (${status})
+${summary}"
+  fi
+
   if [ "$DEV_LEAD_DRY_RUN" = "true" ]; then
     echo "[dry-run] would post reviews terminal marker: intent=${intent} status=${status}"
+    [ -n "$summary" ] && echo "$body"
     return 0
   fi
   # Best-effort: don't fail the overall script if the marker post fails
-  gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$marker" 2>/dev/null || true
+  gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$body" 2>/dev/null || true
+}
+
+# commit_and_push: adds all changes, commits with an intent-specific message,
+# and pushes to the PR branch. Returns 0 if changes were made and pushed,
+# 1 if no changes were found.
+commit_and_push() {
+  local intent="$1"
+  if git diff --quiet && git diff --cached --quiet; then
+    echo "::notice::No changes to commit for intent=${intent}"
+    return 1
+  fi
+
+  local commit_msg
+  case "$intent" in
+    fix-reviews)     commit_msg="fix(reviews): address review comments [skip ci-relay]" ;;
+    fix-bot-comment) commit_msg="fix(bot): address bot feedback [skip ci-relay]" ;;
+    human|human-pr)  commit_msg="chore: apply manual instructions [skip ci-relay]" ;;
+    rebase)          commit_msg="chore: resolve rebase conflicts [skip ci-relay]" ;;
+    *)               commit_msg="chore: dev-lead update (${intent}) [skip ci-relay]" ;;
+  esac
+
+  if [ "$DEV_LEAD_DRY_RUN" = "true" ]; then
+    echo "[dry-run] would git add, commit with '${commit_msg}', and push"
+  else
+    git add -A
+    git commit -m "$commit_msg"
+    git push
+  fi
+  return 0
 }
 
 # has_reviews_rate_limited_marker: returns 0 if a rate-limited marker for this
@@ -202,7 +245,13 @@ case "$INTENT_TYPE" in
     rc=0
     build_and_run "fix-reviews" "$(model_for_intent "fix-reviews")" || rc=$?
     [ "$rc" -eq 2 ] && handle_rate_limit "fix-reviews"
-    [ "$rc" -eq 0 ] && post_reviews_terminal "fix-reviews" "applied"
+    if [ "$rc" -eq 0 ]; then
+      if commit_and_push "fix-reviews"; then
+        post_reviews_terminal "fix-reviews" "applied"
+      else
+        post_reviews_terminal "fix-reviews" "no-changes" "No changes were needed for the open review threads."
+      fi
+    fi
     exit "$rc"
     ;;
   fix-bot-comment)
@@ -211,6 +260,13 @@ case "$INTENT_TYPE" in
     rc=0
     build_and_run "fix-bot-comment" "$(model_for_intent "fix-bot-comment")" || rc=$?
     [ "$rc" -eq 2 ] && handle_rate_limit "fix-bot-comment"
+    if [ "$rc" -eq 0 ]; then
+      if commit_and_push "fix-bot-comment"; then
+        post_reviews_terminal "fix-bot-comment" "applied" "Changes committed and pushed."
+      else
+        post_reviews_terminal "fix-bot-comment" "no-changes" "Engine ran but made no changes."
+      fi
+    fi
     exit "$rc"
     ;;
   human)
@@ -219,6 +275,13 @@ case "$INTENT_TYPE" in
     rc=0
     build_and_run "human" "$(model_for_intent "human")" || rc=$?
     [ "$rc" -eq 2 ] && handle_rate_limit "human"
+    if [ "$rc" -eq 0 ]; then
+      if commit_and_push "human"; then
+        post_reviews_terminal "human" "applied" "Changes committed and pushed."
+      else
+        post_reviews_terminal "human" "no-changes" "Engine ran but made no changes."
+      fi
+    fi
     exit "$rc"
     ;;
   human-pr)
@@ -240,7 +303,13 @@ case "$INTENT_TYPE" in
     rc=0
     build_and_run "human-pr" "$(model_for_intent "human-pr")" || rc=$?
     [ "$rc" -eq 2 ] && handle_rate_limit "human-pr"
-    [ "$rc" -eq 0 ] && post_reviews_terminal "human-pr" "applied"
+    if [ "$rc" -eq 0 ]; then
+      if commit_and_push "human-pr"; then
+        post_reviews_terminal "human-pr" "applied"
+      else
+        post_reviews_terminal "human-pr" "no-changes" "No changes were needed for this PR."
+      fi
+    fi
     exit "$rc"
     ;;
   rebase)
@@ -254,14 +323,16 @@ case "$INTENT_TYPE" in
       echo "::error::PR_NUMBER is required for rebase"
       exit 1
     fi
-    gh pr checkout "$PR_NUMBER" --repo "$REPO"
     git fetch origin "$BASE_REF"
     CONFLICTING_FILES=$(git merge-tree "$(git merge-base HEAD "origin/${BASE_REF}")" HEAD "origin/${BASE_REF}" 2>/dev/null | grep "^changed in both" | awk '{print $NF}' || true)
     export CONFLICTING_FILES
     rc=0
     build_and_run "rebase" "$(model_for_intent "rebase")" || rc=$?
     [ "$rc" -eq 2 ] && handle_rate_limit "rebase"
-    [ "$rc" -eq 0 ] && post_reviews_terminal "rebase" "applied"
+    if [ "$rc" -eq 0 ]; then
+      commit_and_push "rebase"
+      post_reviews_terminal "rebase" "applied"
+    fi
     exit "$rc"
     ;;
   *)
