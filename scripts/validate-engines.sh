@@ -40,6 +40,13 @@ validate_engines() {
       gemini_reasons="GOOGLE_API_KEY secret not set"
     fi
   fi
+  if [ "${GEMINI_CLI_TRUST_WORKSPACE:-false}" != "true" ]; then
+    if [ -n "$gemini_reasons" ]; then
+      gemini_reasons="$gemini_reasons; GEMINI_CLI_TRUST_WORKSPACE is not true"
+    else
+      gemini_reasons="GEMINI_CLI_TRUST_WORKSPACE is not true (fix: set in env or pass --skip-trust)"
+    fi
+  fi
 
   if [ -z "$gemini_reasons" ]; then
     gemini_ok=true
