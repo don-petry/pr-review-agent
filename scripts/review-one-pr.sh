@@ -258,7 +258,18 @@ echo "    [tier1] triage ($ENGINE_TRIAGE_MODEL)"
 _gh_meta_err=/tmp/cascade/gh-meta-prefetch.err
 _gh_diff_err=/tmp/cascade/gh-diff-prefetch.err
 _gh_diff_tmp=/tmp/cascade/gh-diff-raw.txt
-PR_METADATA=$(gh pr view "$PR_URL" --json number,title,body,author,isDraft,baseRefName,headRefName,headRefOid,url,headRepository,headRepositoryOwner,labels,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,reviewRequests,reviews,comments,commits,closingIssuesReferences,additions,deletions,changedFiles,files 2>"$_gh_meta_err") || {
+
+# Use a selective list of fields to avoid hitting payload limits with 
+# massive comment histories or redundant file lists.
+_meta_fields="number,title,body,author,isDraft,baseRefName,headRefName,headRefOid,url,labels,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,reviewRequests,closingIssuesReferences,additions,deletions,changedFiles"
+# We exclude 'comments', 'reviews', 'commits', 'files' from the primary JSON
+# if they are likely to be massive. We'll add a simplified summary of them.
+
+PR_METADATA=$(gh pr view "$PR_URL" --json "$_meta_fields,files" --jq '
+  # Simplify the files list to just path + status + changes to save tokens
+  .files |= map({path: .path, status: .status, additions: .additions, deletions: .deletions})
+  | .
+' 2>"$_gh_meta_err") || {
   _gh_meta_err_content=$(cat "$_gh_meta_err" 2>/dev/null || true)
   if is_rate_limited "$_gh_meta_err_content"; then
     rm -f "$_gh_meta_err" "$_gh_diff_err" "$_gh_diff_tmp"
@@ -271,8 +282,19 @@ PR_METADATA=$(gh pr view "$PR_URL" --json number,title,body,author,isDraft,baseR
   rm -f "$_gh_meta_err" "$_gh_diff_err" "$_gh_diff_tmp"
   exit 1
 }
+
+# For Copilot, we must be extremely conservative (4k-8k total context).
+# For Claude/Gemini, we can afford more context.
+if [ "${REVIEW_ENGINE:-claude}" = "copilot" ]; then
+  _diff_limit=50
+  # Remove the bulky body from metadata for Copilot to save tokens and avoid content filters
+  PR_METADATA=$(echo "$PR_METADATA" | jq 'del(.body)')
+else
+  _diff_limit=3000
+fi
+
 if gh pr diff "$PR_URL" > "$_gh_diff_tmp" 2>"$_gh_diff_err"; then
-  PR_DIFF=$(head -3000 "$_gh_diff_tmp")
+  PR_DIFF=$(head -"$_diff_limit" "$_gh_diff_tmp")
 else
   _gh_diff_err_content=$(cat "$_gh_diff_err" 2>/dev/null || true)
   if is_rate_limited "$_gh_diff_err_content"; then
