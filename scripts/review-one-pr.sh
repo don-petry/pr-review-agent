@@ -529,7 +529,7 @@ if [ "$DUCK_VALID" = "true" ]; then
   OUTPUT_FILE="/tmp/cascade/combined.json"
   export DEEP_RESULT DUCK_RESULT OUTPUT_FILE
   run_agentic prompts/synthesize-duck.md "$ENGINE_ACTION_MODEL" \
-    > /tmp/cascade/synth.log 2>&1 || true
+    > /tmp/cascade/synth-stdout.txt 2>/tmp/cascade/synth.log || true
 
   if [ -s "$OUTPUT_FILE" ] && jq empty "$OUTPUT_FILE" 2>/dev/null; then
     COMBINED_DECISION=$(jq -r '.decision' "$OUTPUT_FILE")
@@ -538,8 +538,20 @@ if [ "$DUCK_VALID" = "true" ]; then
     COMBINED_ESCALATE=$(jq -r '.escalate_to_opus' "$OUTPUT_FILE")
     echo "    [tier2b] combined: decision=$COMBINED_DECISION risk=$COMBINED_RISK agreement=$COMBINED_AGREEMENT escalate_to_opus=$COMBINED_ESCALATE"
   else
+    SYNTH_STDOUT=$(cat /tmp/cascade/synth-stdout.txt 2>/dev/null || true)
+    SYNTH_STDERR=$(cat /tmp/cascade/synth.log 2>/dev/null || true)
+    if is_cli_error "$SYNTH_STDOUT" || is_cli_error "$SYNTH_STDERR"; then
+      echo "    [error] CLI format error (synthesis) — treating as per-PR failure"
+      echo "${SYNTH_STDOUT:-}${SYNTH_STDERR:+ (stderr: $SYNTH_STDERR)}"
+      exit 1
+    fi
+    if is_rate_limited "$SYNTH_STDOUT" || is_rate_limited "$SYNTH_STDERR"; then
+      echo "    [tier2b] rate limit detected during synthesis — exiting with code 2 for engine fallback"
+      echo "${SYNTH_STDOUT:-}${SYNTH_STDERR:+ (stderr: $SYNTH_STDERR)}"
+      exit 2
+    fi
     echo "    [tier2b] synthesis failed — falling back to deep review only"
-    cat /tmp/cascade/synth.log 2>/dev/null || true
+    [ -n "$SYNTH_STDERR" ] && echo "    stderr: $SYNTH_STDERR"
     OUTPUT_FILE="/tmp/cascade/deep.json"
     DUCK_VALID=false
     COMBINED_ESCALATE=$(jq -r '.escalate_to_opus' "$OUTPUT_FILE")
