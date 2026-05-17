@@ -27,6 +27,10 @@ on:
       head_sha:
         description: 'Head SHA'
         required: false
+      engine:
+        description: 'Engine to use (overrides DEV_LEAD_ENGINE)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -83,7 +87,13 @@ jobs:
         run: bash scripts/dev-lead-intent.sh
 
       - name: Log intent
+        env:
+          INPUT_ENGINE: ${{ github.event.inputs.engine }}
         run: |
+          if [ -n "$INPUT_ENGINE" ]; then
+            echo "DEV_LEAD_ENGINE=$INPUT_ENGINE" >> "$GITHUB_ENV"
+            export DEV_LEAD_ENGINE="$INPUT_ENGINE"
+          fi
           echo "::notice::intent=$INTENT_TYPE reason=$INTENT_REASON"
 
       - name: Parse intent context fields
