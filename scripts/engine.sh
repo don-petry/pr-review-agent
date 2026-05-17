@@ -118,6 +118,7 @@ is_rate_limited() {
   _pat="$_pat|claude.*usage|usage.*claude"                             # Claude-specific cap
   _pat="$_pat|plan.*limit|subscription.*limit|billing.*limit|daily.*limit|monthly.*limit"
   _pat="$_pat|([^0-9]|^)402([^0-9]|$)"                               # HTTP 402 (payment)
+  _pat="$_pat|tokens_limit_reached|body too large|([^0-9]|^)413([^0-9]|$)" # Context / Request size
   printf '%s\n' "$text" | grep -qiE "($_pat)"
 }
 
