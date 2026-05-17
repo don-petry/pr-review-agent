@@ -64,20 +64,19 @@ _setup_engine_vars() {
       DUCK_MODEL="claude-sonnet-4-6"
       ;;
     copilot)
-      ENGINE_TRIAGE_MODEL="o4-mini"
-      ENGINE_DEEP_MODEL="o4-mini"
-      ENGINE_AUDIT_MODEL="o4-mini"
-      ENGINE_ACTION_MODEL="o4-mini"
-      ENGINE_SINGLE_MODEL="o4-mini"
-      # GitHub Models API model identifier — must match a model available at
-      # https://models.github.ai (see GitHub Models marketplace).
-      # Override via COPILOT_API_MODEL env var if the default is unavailable.
-      # openai/o4-mini is the April-2025 o4-generation reasoning model; it is
-      # not a typo for o1-mini or gpt-4o-mini.
-      COPILOT_API_MODEL="${COPILOT_API_MODEL:-openai/o4-mini}"
+      # GitHub Models API model identifiers.
+      # gpt-4o is the high-capability flagship; gpt-4o-mini is for triage/lightweight.
+      # openai/o4-mini is a reasoning model but gpt-4o has better tool-calling support.
+      ENGINE_TRIAGE_MODEL="gpt-4o-mini"
+      ENGINE_DEEP_MODEL="gpt-4o"
+      ENGINE_AUDIT_MODEL="gpt-4o"
+      ENGINE_ACTION_MODEL="gpt-4o"
+      ENGINE_SINGLE_MODEL="gpt-4o"
+      
+      COPILOT_API_MODEL="${COPILOT_API_MODEL:-}" # Reset to allow tier-specific defaults
       export COPILOT_API_MODEL
-      ENGINE_LABEL="triage: o4-mini → deep: o4-mini + duck: sonnet 4.6 → audit: o4-mini (GitHub Models API)"
-      ENGINE_SINGLE_LABEL="single-reviewer mode: o4-mini (GitHub Models API)"
+      ENGINE_LABEL="triage: gpt-4o-mini → deep: gpt-4o + duck: sonnet 4.6 → audit: gpt-4o (GitHub Models API)"
+      ENGINE_SINGLE_LABEL="single-reviewer mode: gpt-4o (GitHub Models API)"
       DUCK_ENGINE="claude"
       DUCK_MODEL="claude-sonnet-4-6"
       ;;
@@ -146,108 +145,6 @@ is_transient_failure() {
   esac
 }
 
-# copilot_chat <prompt_file> [timeout_sec]
-# Calls the GitHub Models REST API (OpenAI-compatible) for text completion.
-#
-# Replaces the broken `gh copilot suggest -p "$(cat <file>)"` invocation:
-#   • The -p flag is not valid syntax in modern gh CLI versions (produces
-#     "Invalid command format" and causes a non-zero exit that the session
-#     circuit-breaker misclassifies as a rate-limit).
-#   • gh copilot suggest is a shell-command suggestion tool; it does NOT
-#     support arbitrary prompt text or return structured JSON.
-#   • $(cat <file>) as a shell argument fails for large PR prompts (ARG_MAX).
-#
-# This function uses curl + the GitHub Models REST API instead:
-#   https://models.github.ai/inference/chat/completions
-# The endpoint is versioned (X-GitHub-Api-Version header) and stable against
-# gh CLI version changes. Auth uses COPILOT_GITHUB_TOKEN (user PAT with a
-# Copilot subscription). Model is COPILOT_API_MODEL (default: openai/o4-mini).
-#
-# Rate-limit responses (HTTP 429) are echoed to stdout so the caller's
-# is_rate_limited() check can detect them and exit 2 for engine fallback.
-copilot_chat() {
-  local prompt_file="$1"
-  local timeout_sec="${2:-300}"
-
-  # Build JSON payload via python3 into a temp file — safely encodes arbitrary
-  # prompt text (special chars, newlines, quotes, Unicode, large files) and
-  # avoids ARG_MAX limits when passing large diffs to curl via --data-binary.
-  local _body_file rc=0
-  _body_file=$(mktemp) || { echo "copilot_chat: mktemp failed" >&2; return 1; }
-  python3 -c "
-import json, sys
-prompt = open(sys.argv[1]).read()
-model  = sys.argv[2]
-sys.stdout.write(json.dumps({
-    'model': model,
-    'messages': [{'role': 'user', 'content': prompt}],
-}))
-" "$prompt_file" "${COPILOT_API_MODEL:-openai/o4-mini}" > "$_body_file" || {
-    rm -f "$_body_file"
-    echo "copilot_chat: failed to build JSON payload from $prompt_file" >&2
-    return 1
-  }
-
-  # Call GitHub Models REST API. -w '\n%{http_code}' appends the HTTP status
-  # on its own line so we can split body from code in pure shell.
-  local raw
-  raw=$(
-    timeout "$timeout_sec" curl -sSL \
-      -H "Authorization: Bearer ${COPILOT_GITHUB_TOKEN:?COPILOT_GITHUB_TOKEN is required for copilot engine}" \
-      -H "Content-Type: application/json" \
-      -H "X-GitHub-Api-Version: 2022-11-28" \
-      https://models.github.ai/inference/chat/completions \
-      --data-binary @"$_body_file" \
-      -w '\n%{http_code}'
-  ) || rc=$?
-  rm -f "$_body_file"
-
-  if [ "$rc" -ne 0 ]; then
-    echo "copilot_chat: curl exited $rc (timeout=${timeout_sec}s)" >&2
-    return "$rc"
-  fi
-
-  # Split the appended HTTP code from the response body.
-  local http_code response_body
-  http_code=$(printf '%s' "$raw" | tail -n 1)
-  response_body=$(printf '%s' "$raw" | head -n -1)
-
-  # Rate-limit: echo to stdout so is_rate_limited() in review-one-pr.sh fires.
-  if [ "$http_code" -eq 429 ]; then
-    echo "error: GitHub Models API rate limit (HTTP 429 — quota exceeded)"
-    printf '%s\n' "$response_body"
-    return 1
-  fi
-
-  # Other HTTP errors: log to stderr and fail.
-  if [ "$http_code" -ge 400 ]; then
-    echo "copilot_chat: HTTP $http_code from GitHub Models API" >&2
-    printf '%s\n' "$response_body" >&2
-    return 1
-  fi
-
-  # Extract the assistant message from the JSON response.
-  printf '%s' "$response_body" | python3 -c "
-import json, sys
-try:
-    data = json.load(sys.stdin)
-except json.JSONDecodeError as e:
-    print('copilot_chat: invalid JSON response: ' + str(e), file=sys.stderr)
-    sys.exit(1)
-if 'error' in data:
-    err = data['error']
-    msg = err.get('message', str(err)) if isinstance(err, dict) else str(err)
-    print('copilot_chat: API error: ' + str(msg), file=sys.stderr)
-    sys.exit(1)
-choices = data.get('choices', [])
-if not choices:
-    print('copilot_chat: empty choices in response', file=sys.stderr)
-    sys.exit(1)
-content = choices[0].get('message', {}).get('content', '')
-print(content, end='')
-" || return 1
-}
-
 # run_triage <prompt_file>
 # No-tool mode. The prompt file already has all PR context inlined by the
 # caller (review-one-pr.sh builds it). Every tool is denied so the model
@@ -265,6 +162,8 @@ print(content, end='')
 run_triage() {
   local prompt_file="$1"
   local attempt=1 rc=0
+  local script_dir
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   while [ "$attempt" -le "$RETRY_MAX_ATTEMPTS" ]; do
     rc=0
     case "$REVIEW_ENGINE" in
@@ -282,7 +181,13 @@ run_triage() {
           < "$prompt_file" || rc=$?
         ;;
       copilot)
-        copilot_chat "$prompt_file" "$TRIAGE_TIMEOUT_SEC" || rc=$?
+        # Call the copilot agent script with NO allowed tools for triage
+        if [ -z "${COPILOT_GITHUB_TOKEN:-}" ]; then
+          echo "::warning::COPILOT_GITHUB_TOKEN not set; copilot engine unavailable" >&2
+          rc=2
+        else
+          "$script_dir/copilot_agent.py" "$ENGINE_TRIAGE_MODEL" "$prompt_file" "" || rc=$?
+        fi
         ;;
     esac
     if [ "$rc" -eq 0 ]; then
@@ -312,6 +217,8 @@ run_triage() {
 run_agentic() {
   local prompt_file="$1"
   local model="$2"
+  local script_dir
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   case "$REVIEW_ENGINE" in
     claude)
       timeout "$DEEP_TIMEOUT_SEC" claude --print \
@@ -328,14 +235,12 @@ run_agentic() {
         < "$prompt_file"
       ;;
     copilot)
-      # Text-only completion via GitHub Models API (no tool use available).
-      # Stream directly to stdout; tee to OUTPUT_FILE when set.
-      if [ -n "${OUTPUT_FILE:-}" ]; then
-        copilot_chat "$prompt_file" "$DEEP_TIMEOUT_SEC" | tee "$OUTPUT_FILE"
-        return "${PIPESTATUS[0]}"
-      else
-        copilot_chat "$prompt_file" "$DEEP_TIMEOUT_SEC"
+      # Full tool access (Read-only subset) via copilot_agent.py
+      if [ -z "${COPILOT_GITHUB_TOKEN:-}" ]; then
+        echo "::warning::COPILOT_GITHUB_TOKEN not set; copilot engine unavailable" >&2
+        return 2
       fi
+      "$script_dir/copilot_agent.py" "$model" "$prompt_file" "Bash,Read,Grep,Glob"
       ;;
   esac
 }
@@ -381,6 +286,8 @@ sys.exit(1)
 run_duck() {
   local prompt_file="$1"
   local model="$2"
+  local script_dir
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   case "$DUCK_ENGINE" in
     claude)
       unset COPILOT_GITHUB_TOKEN 2>/dev/null || true
@@ -404,12 +311,7 @@ run_duck() {
     copilot)
       unset CLAUDE_CODE_OAUTH_TOKEN 2>/dev/null || true
       unset GOOGLE_API_KEY 2>/dev/null || true
-      if [ -n "${OUTPUT_FILE:-}" ]; then
-        copilot_chat "$prompt_file" "$DUCK_TIMEOUT_SEC" | tee "$OUTPUT_FILE"
-        return "${PIPESTATUS[0]}"
-      else
-        copilot_chat "$prompt_file" "$DUCK_TIMEOUT_SEC"
-      fi
+      "$script_dir/copilot_agent.py" "$model" "$prompt_file" "Bash,Read,Grep,Glob"
       ;;
     *)
       echo "::error::Unknown DUCK_ENGINE='$DUCK_ENGINE'" >&2
@@ -417,7 +319,6 @@ run_duck() {
       ;;
   esac
 }
-
 # parse_reset_time <text>
 # Extracts the rate-limit reset time from engine output and writes an ISO-8601
 # UTC timestamp to /tmp/dev-lead-rate-limit-reset for callers to embed in
@@ -502,6 +403,8 @@ run_writer() {
   # still streaming output to the caller.
   local _tmp rc=0
   _tmp=$(mktemp)
+  local script_dir
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
   case "$REVIEW_ENGINE" in
     claude)
@@ -519,13 +422,12 @@ run_writer() {
         < "$prompt_file" 2>&1 | tee "$_tmp" || rc=${PIPESTATUS[0]}
       ;;
     copilot)
-      # GitHub Models REST API is text-only — no Write/Edit tool access.
-      # Returning exit 2 signals "write engine unavailable" so run_writer_with_fallback
-      # exhausts the chain and the retry cron re-triggers when a write-capable
-      # engine (claude, gemini) is available again.
-      rm -f "$_tmp"
-      echo "::notice::copilot engine is text-only; write operations unavailable — triggering retry" >&2
-      return 2
+      # Full tool access (Write/Edit enabled) via copilot_agent.py
+      if [ -z "${COPILOT_GITHUB_TOKEN:-}" ]; then
+        echo "::warning::COPILOT_GITHUB_TOKEN not set; copilot engine unavailable for writes" >&2
+        return 2
+      fi
+      "$script_dir/copilot_agent.py" "$model" "$prompt_file" "Bash,Read,Write,Edit,Grep,Glob" | tee "$_tmp" || rc=${PIPESTATUS[0]}
       ;;
   esac
 

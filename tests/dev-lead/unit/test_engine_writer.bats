@@ -90,18 +90,28 @@ _source_engine() {
   [ "$status" -eq 0 ]
 }
 
-@test "writer: copilot returns exit 2 for write operations (text-only engine)" {
-  # Copilot is text-only and cannot write files. run_writer returns exit 2 so
-  # run_writer_with_fallback exhausts the chain and the retry cron re-triggers.
-  # claude must NOT be called — the old fallback-to-claude bug must stay fixed.
-  export COPILOT_API_MODEL="openai/o4-mini"
+@test "writer: copilot is write-capable via copilot_agent.py" {
+  export COPILOT_GITHUB_TOKEN="dummy-token"
   _source_engine "copilot"
   export DEV_LEAD_DRY_RUN=false
-  rm -f "$STUB_BIN_DIR/claude"
+  # Create a stub for copilot_agent.py in the script directory
+  local script_dir
+  script_dir="$(cd "$(dirname "$ENGINE_SCRIPT")" && pwd)"
+  mv "$script_dir/copilot_agent.py" "$script_dir/copilot_agent.py.bak"
+  cat > "$script_dir/copilot_agent.py" << 'STUB'
+#!/usr/bin/env bash
+echo "Copilot Agent Stub Output: Applied fix."
+exit 0
+STUB
+  chmod +x "$script_dir/copilot_agent.py"
 
   run run_writer "$TEST_PROMPT"
 
-  [ "$status" -eq 2 ]
+  # Restore original
+  mv "$script_dir/copilot_agent.py.bak" "$script_dir/copilot_agent.py"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Applied fix."* ]]
 }
 
 @test "writer: run_writer dry-run logs prompt line count" {
