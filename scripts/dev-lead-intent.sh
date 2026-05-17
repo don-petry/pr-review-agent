@@ -29,17 +29,20 @@ emit_intent() {
   echo "intent_type=${intent}" >> "$GITHUB_OUTPUT"
   echo "intent_reason=${reason}" >> "$GITHUB_OUTPUT"
 
-  # Use heredoc for context to handle multiline JSON safely
+  # Use a random delimiter for context to handle multiline JSON safely
+  local EOF_DELIMITER
+  EOF_DELIMITER="EOF_$(dd if=/dev/urandom bs=15 count=1 2>/dev/null | base64 | tr -dc 'a-zA-Z0-9')"
+
   {
-    echo "INTENT_CONTEXT<<EOF"
+    echo "INTENT_CONTEXT<<$EOF_DELIMITER"
     echo "${context}"
-    echo "EOF"
+    echo "$EOF_DELIMITER"
   } >> "$GITHUB_ENV"
 
   {
-    echo "intent_context<<EOF"
+    echo "intent_context<<$EOF_DELIMITER"
     echo "${context}"
-    echo "EOF"
+    echo "$EOF_DELIMITER"
   } >> "$GITHUB_OUTPUT"
 
   echo "  [intent] type=${intent} reason=${reason} context=${context}"
