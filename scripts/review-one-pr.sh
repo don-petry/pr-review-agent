@@ -60,8 +60,6 @@ CI_STATUS=$(echo "$PR_SNAPSHOT" | jq -r '
   end
 ')
 echo "    CI status: $CI_STATUS"
-CI_STATUS="passing" # FORCE FOR TESTING
-echo "    CI status (forced): $CI_STATUS"
 
 # Exit code 100 is the skip sentinel: the caller treats any 100 exit as a
 # no-op and does not count it against the MAX_PRS review budget.
