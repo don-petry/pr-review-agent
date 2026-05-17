@@ -269,7 +269,7 @@ elif [ "$DECISION" = "escalate" ]; then
     # already carries its own marker, and a second copy would cause review-one-pr.sh
     # to count this cycle as 2 (grep -c counts matching lines), prematurely hitting
     # the max-cycle escalation cap.
-    BODY_FOR_COMMENT=$(printf '%s' "$BODY" | sed 's/<!-- pr-review-agent v1 sha=[a-f0-9]* --[^>]*-->//g')
+    BODY_FOR_COMMENT=$(printf '%s' "$BODY" | sed 's/<!-- pr-review-agent v1 sha=[a-f0-9][^>]*-->//g')
     cat > "$COMMENT_FILE" <<COMMENT_END
 <!-- pr-review-agent v1 sha=$PR_HEAD_SHA --> <!-- decision=fix-requested risk=$RISK -->
 
