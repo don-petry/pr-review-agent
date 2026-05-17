@@ -15,6 +15,18 @@ on:
     types: [completed]
   repository_dispatch:
     types: [dev-lead-ci-failure, dev-lead-reviews-retry]
+  workflow_dispatch:
+    inputs:
+      intent_type:
+        description: 'Intent type'
+        required: true
+        default: 'human-pr'
+      pr_number:
+        description: 'PR number'
+        required: true
+      head_sha:
+        description: 'Head SHA'
+        required: false
 
 permissions:
   contents: write
