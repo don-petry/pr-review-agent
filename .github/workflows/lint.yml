@@ -1,0 +1,36 @@
+name: Lint
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/**'
+      - '.github/workflows/**'
+      - 'tests/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: shellcheck
+        # --severity=warning: SC2016 (info) fires on printf '`%s`' where backticks
+        # are literal markdown, not shell expressions — suppress info-level noise.
+        run: shellcheck --severity=warning scripts/fleet_monitor.sh scripts/fleet_report.sh
+
+  bats:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Install bats
+        run: sudo apt-get install -y bats
+
+      - name: Run tests
+        run: bats tests/fleet_report.bats
