@@ -185,7 +185,7 @@ sys.stdout.write(json.dumps({
 
   # Call GitHub Models REST API. -w '\n%{http_code}' appends the HTTP status
   # on its own line so we can split body from code in pure shell.
-  local raw
+  local raw http_code response_body
   raw=$(
     timeout "$timeout_sec" curl -sSL \
       -H "Authorization: Bearer ${COPILOT_GITHUB_TOKEN:?COPILOT_GITHUB_TOKEN is required for copilot engine}" \
@@ -195,17 +195,44 @@ sys.stdout.write(json.dumps({
       --data-binary @"$_body_file" \
       -w '\n%{http_code}'
   ) || rc=$?
+
+  if [ "$rc" -eq 0 ]; then
+    http_code=$(printf '%s' "$raw" | tail -n 1)
+    response_body=$(printf '%s' "$raw" | head -n -1)
+    
+    # If 413 (Payload Too Large) and we used o4-mini, try gpt-4o as a last-resort fallback.
+    # o4-mini sometimes has very tight (4k) input limits on the free-tier gateway.
+    if [ "$http_code" -eq 413 ] && [[ "${COPILOT_API_MODEL:-}" == *"o4-mini"* ]]; then
+      echo "::warning::o4-mini payload limit hit (HTTP 413), retrying with gpt-4o" >&2
+      raw=$(
+        python3 -c "
+import json, sys
+data = json.load(open(sys.argv[1]))
+data['model'] = 'openai/gpt-4o'
+sys.stdout.write(json.dumps(data))
+" "$_body_file" > "$_body_file.tmp" && mv "$_body_file.tmp" "$_body_file"
+        
+        timeout "$timeout_sec" curl -sSL \
+          -H "Authorization: Bearer ${COPILOT_GITHUB_TOKEN}" \
+          -H "Content-Type: application/json" \
+          -H "X-GitHub-Api-Version: 2022-11-28" \
+          https://models.github.ai/inference/chat/completions \
+          --data-binary @"$_body_file" \
+          -w '\n%{http_code}'
+      ) || rc=$?
+      
+      if [ "$rc" -eq 0 ]; then
+        http_code=$(printf '%s' "$raw" | tail -n 1)
+        response_body=$(printf '%s' "$raw" | head -n -1)
+      fi
+    fi
+  fi
   rm -f "$_body_file"
 
   if [ "$rc" -ne 0 ]; then
     echo "copilot_chat: curl exited $rc (timeout=${timeout_sec}s)" >&2
     return "$rc"
   fi
-
-  # Split the appended HTTP code from the response body.
-  local http_code response_body
-  http_code=$(printf '%s' "$raw" | tail -n 1)
-  response_body=$(printf '%s' "$raw" | head -n -1)
 
   # Rate-limit: echo to stdout so is_rate_limited() in review-one-pr.sh fires.
   if [ "$http_code" -eq 429 ]; then
@@ -487,15 +514,38 @@ run_writer() {
         < "$prompt_file" | tee "$_tmp" || rc=${PIPESTATUS[0]}
       ;;
     copilot)
-      # Copilot (gh copilot suggest) is text-only — falls back to Claude for write ops
-      echo "::warning::Copilot engine is text-only; falling back to Claude for write operations" >&2
-      local saved="$REVIEW_ENGINE"
-      REVIEW_ENGINE="claude" timeout "$ACTION_TIMEOUT_SEC" claude --print \
-        --model "$model" \
+      # Copilot (gh copilot suggest) is text-only — falls back to other engines for write ops
+      echo "::warning::Copilot engine is text-only; falling back to Claude/Gemini for write operations" >&2
+      local saved_engine="$REVIEW_ENGINE"
+      local fallback_rc=1
+      
+      # Try Claude first
+      export REVIEW_ENGINE="claude"
+      set_engine_config
+      # run_writer calls itself via case, but since we exported REVIEW_ENGINE and called set_engine_config, 
+      # we can just call the claude logic directly or recursively. 
+      # To avoid infinite recursion, we'll just use a subshell or call claude logic.
+      timeout "$ACTION_TIMEOUT_SEC" claude --print \
+        --model "$ENGINE_ACTION_MODEL" \
         --permission-mode acceptEdits \
         --allowed-tools "Bash,Read,Write,Edit,Grep,Glob" \
-        < "$prompt_file" | tee "$_tmp" || rc=${PIPESTATUS[0]}
-      REVIEW_ENGINE="$saved"
+        < "$prompt_file" | tee "$_tmp" && fallback_rc=0 || fallback_rc=${PIPESTATUS[0]}
+        
+      # If Claude is rate-limited, try Gemini
+      if [ "$fallback_rc" -eq 2 ] || [ "$fallback_rc" -eq 127 ]; then
+        echo "::warning::Claude fallback rate-limited or unavailable, trying Gemini" >&2
+        export REVIEW_ENGINE="gemini"
+        set_engine_config
+        timeout "$ACTION_TIMEOUT_SEC" gemini --prompt "" \
+          --model "$ENGINE_ACTION_MODEL" \
+          --approval-mode auto_edit \
+          --output-format text \
+          < "$prompt_file" | tee "$_tmp" && fallback_rc=0 || fallback_rc=${PIPESTATUS[0]}
+      fi
+      
+      rc=$fallback_rc
+      export REVIEW_ENGINE="$saved_engine"
+      set_engine_config
       ;;
   esac
 
