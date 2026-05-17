@@ -273,7 +273,7 @@ elif [ "$DECISION" = "escalate" ]; then
 The automated review identified the following issues. Please address each one:
 
 ### Findings to fix
-[Findings would be inserted here]
+$BODY
 
 ### Additional tasks
 1. Resolve all unresolved review thread comments from other reviewers
@@ -301,3 +301,4 @@ COMMENT_END
 fi
 
 echo "Review action completed"
+
