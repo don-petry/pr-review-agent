@@ -44,11 +44,11 @@ set_engine_config() {
       DUCK_MODEL="o4-mini"
       ;;
     gemini)
-      ENGINE_TRIAGE_MODEL="gemini-1.5-flash-latest"
-      ENGINE_DEEP_MODEL="gemini-1.5-pro-latest"
-      ENGINE_AUDIT_MODEL="gemini-1.5-pro-latest"
-      ENGINE_ACTION_MODEL="gemini-1.5-pro-latest"
-      ENGINE_SINGLE_MODEL="gemini-1.5-pro-latest"
+      ENGINE_TRIAGE_MODEL="gemini-1.5-flash"
+      ENGINE_DEEP_MODEL="gemini-1.5-pro"
+      ENGINE_AUDIT_MODEL="gemini-1.5-pro"
+      ENGINE_ACTION_MODEL="gemini-1.5-pro"
+      ENGINE_SINGLE_MODEL="gemini-1.5-pro"
       ENGINE_LABEL="triage: gemini-1.5-flash → deep: gemini-1.5-pro + duck: sonnet 4.6 → audit: gemini-1.5-pro"
       ENGINE_SINGLE_LABEL="single-reviewer mode: gemini-1.5-pro"
       # Cross-engine rubber duck: use Claude for diversity

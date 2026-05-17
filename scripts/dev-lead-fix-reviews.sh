@@ -260,7 +260,8 @@ case "$INTENT_TYPE" in
     exit "$rc"
     ;;
   human)
-    export PR_NUMBER PR_URL="https://github.com/${REPO}/pull/${PR_NUMBER}"
+    export PR_NUMBER="${PR_NUMBER:-}"
+    export PR_URL="https://github.com/${REPO}/pull/${PR_NUMBER}"
     export REPO ACTOR="${ACTOR:-}" USER_INSTRUCTION="${USER_INSTRUCTION:-}" PR_DESCRIPTION="${PR_DESCRIPTION:-}"
     rc=0
     build_and_run "human" || rc=$?
@@ -275,7 +276,8 @@ case "$INTENT_TYPE" in
     exit "$rc"
     ;;
   human-pr)
-    export PR_NUMBER PR_URL="https://github.com/${REPO}/pull/${PR_NUMBER}"
+    export PR_NUMBER="${PR_NUMBER:-}"
+    export PR_URL="https://github.com/${REPO}/pull/${PR_NUMBER}"
     export REPO PR_TITLE="${PR_TITLE:-}" PR_DESCRIPTION="${PR_DESCRIPTION:-}"
     OPEN_THREADS_JSON=$(gh api graphql -f query='
       query($owner:String!,$repo:String!,$pr:Int!) {
