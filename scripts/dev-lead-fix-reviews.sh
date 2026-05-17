@@ -49,15 +49,6 @@ build_and_run() {
   return "$rc"
 }
 
-post_comment() {
-  local body="$1"
-  if [ "$DEV_LEAD_DRY_RUN" = "true" ]; then
-    echo "[dry-run] would post comment: $body"
-  else
-    gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$body"
-  fi
-}
-
 # post_reviews_terminal: writes a terminal status marker after a retryable
 # intent completes. This prevents the retry cron from re-dispatching the same
 # intent on subsequent runs when the SHA hasn't changed.
@@ -312,7 +303,8 @@ case "$INTENT_TYPE" in
     exit "$rc"
     ;;
   rebase)
-    export PR_NUMBER="${PR_NUMBER:-}" PR_URL="https://github.com/${REPO}/pull/${PR_NUMBER:-}"
+    export PR_NUMBER="${PR_NUMBER:-}"
+    export PR_URL="https://github.com/${REPO}/pull/${PR_NUMBER}"
     export REPO BASE_REF="${BASE_REF:-main}" HEAD_REF="${HEAD_REF:-}" CONFLICTING_FILES="${CONFLICTING_FILES:-}"
     if [ "$DEV_LEAD_DRY_RUN" = "true" ]; then
       echo "[dry-run] would run rebase for PR $PR_NUMBER"
@@ -329,8 +321,11 @@ case "$INTENT_TYPE" in
     build_and_run "rebase" || rc=$?
     [ "$rc" -eq 2 ] && handle_rate_limit "rebase"
     if [ "$rc" -eq 0 ]; then
-      commit_and_push "rebase"
-      post_reviews_terminal "rebase" "applied"
+      if commit_and_push "rebase"; then
+        post_reviews_terminal "rebase" "applied"
+      else
+        post_reviews_terminal "rebase" "no-changes" "PR is already up to date."
+      fi
     fi
     exit "$rc"
     ;;
