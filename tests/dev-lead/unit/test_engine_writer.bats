@@ -99,9 +99,9 @@ _source_engine() {
   script_dir="$(cd "$(dirname "$ENGINE_SCRIPT")" && pwd)"
   mv "$script_dir/copilot_agent.py" "$script_dir/copilot_agent.py.bak"
   cat > "$script_dir/copilot_agent.py" << 'STUB'
-#!/usr/bin/env bash
-echo "Copilot Agent Stub Output: Applied fix."
-exit 0
+import sys
+print("Copilot Agent Stub Output: Applied fix.")
+sys.exit(0)
 STUB
   chmod +x "$script_dir/copilot_agent.py"
 

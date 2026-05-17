@@ -186,7 +186,7 @@ run_triage() {
           echo "::warning::COPILOT_GITHUB_TOKEN not set; copilot engine unavailable" >&2
           rc=2
         else
-          "$script_dir/copilot_agent.py" "$ENGINE_TRIAGE_MODEL" "$prompt_file" "" || rc=$?
+          python3 "$script_dir/copilot_agent.py" "$ENGINE_TRIAGE_MODEL" "$prompt_file" "" || rc=$?
         fi
         ;;
     esac
@@ -240,7 +240,7 @@ run_agentic() {
         echo "::warning::COPILOT_GITHUB_TOKEN not set; copilot engine unavailable" >&2
         return 2
       fi
-      "$script_dir/copilot_agent.py" "$model" "$prompt_file" "Bash,Read,Grep,Glob"
+      python3 "$script_dir/copilot_agent.py" "$model" "$prompt_file" "Bash,Read,Grep,Glob"
       ;;
   esac
 }
@@ -311,7 +311,7 @@ run_duck() {
     copilot)
       unset CLAUDE_CODE_OAUTH_TOKEN 2>/dev/null || true
       unset GOOGLE_API_KEY 2>/dev/null || true
-      "$script_dir/copilot_agent.py" "$model" "$prompt_file" "Bash,Read,Grep,Glob"
+      python3 "$script_dir/copilot_agent.py" "$model" "$prompt_file" "Bash,Read,Grep,Glob"
       ;;
     *)
       echo "::error::Unknown DUCK_ENGINE='$DUCK_ENGINE'" >&2
@@ -427,7 +427,7 @@ run_writer() {
         echo "::warning::COPILOT_GITHUB_TOKEN not set; copilot engine unavailable for writes" >&2
         return 2
       fi
-      "$script_dir/copilot_agent.py" "$model" "$prompt_file" "Bash,Read,Write,Edit,Grep,Glob" | tee "$_tmp" || rc=${PIPESTATUS[0]}
+      python3 "$script_dir/copilot_agent.py" "$model" "$prompt_file" "Bash,Read,Write,Edit,Grep,Glob" | tee "$_tmp" || rc=${PIPESTATUS[0]}
       ;;
   esac
 
