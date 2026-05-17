@@ -30,22 +30,23 @@ validate_engines() {
   # ── Gemini ──────────────────────────────────────────────────────────────────
   # Collect every reason the engine is unavailable so the warning is precise.
   local gemini_reasons=""
+  
+  append_gemini_reason() {
+    if [ -n "$gemini_reasons" ]; then
+      gemini_reasons="$gemini_reasons; $1"
+    else
+      gemini_reasons="$1"
+    fi
+  }
+
   if ! command -v gemini >/dev/null 2>&1; then
-    gemini_reasons="Gemini CLI not installed (fix: npm install -g @google/gemini-cli)"
+    append_gemini_reason "Gemini CLI not installed (fix: npm install -g @google/gemini-cli)"
   fi
   if [ -z "${GOOGLE_API_KEY:-}" ]; then
-    if [ -n "$gemini_reasons" ]; then
-      gemini_reasons="$gemini_reasons; GOOGLE_API_KEY secret not set"
-    else
-      gemini_reasons="GOOGLE_API_KEY secret not set"
-    fi
+    append_gemini_reason "GOOGLE_API_KEY secret not set"
   fi
   if [ "${GEMINI_CLI_TRUST_WORKSPACE:-false}" != "true" ]; then
-    if [ -n "$gemini_reasons" ]; then
-      gemini_reasons="$gemini_reasons; GEMINI_CLI_TRUST_WORKSPACE is not true"
-    else
-      gemini_reasons="GEMINI_CLI_TRUST_WORKSPACE is not true (fix: set in env or pass --skip-trust)"
-    fi
+    append_gemini_reason "GEMINI_CLI_TRUST_WORKSPACE is not true (fix: set in env or pass --skip-trust)"
   fi
 
   if [ -z "$gemini_reasons" ]; then
