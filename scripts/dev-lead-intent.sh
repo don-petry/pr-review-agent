@@ -26,10 +26,22 @@ emit_intent() {
   local intent="$1" reason="${2:-}" context="${3:-}"
   echo "INTENT_TYPE=${intent}" >> "$GITHUB_ENV"
   echo "INTENT_REASON=${reason}" >> "$GITHUB_ENV"
-  echo "INTENT_CONTEXT=${context}" >> "$GITHUB_ENV"
   echo "intent_type=${intent}" >> "$GITHUB_OUTPUT"
   echo "intent_reason=${reason}" >> "$GITHUB_OUTPUT"
-  echo "intent_context=${context}" >> "$GITHUB_OUTPUT"
+
+  # Use heredoc for context to handle multiline JSON safely
+  {
+    echo "INTENT_CONTEXT<<EOF"
+    echo "${context}"
+    echo "EOF"
+  } >> "$GITHUB_ENV"
+
+  {
+    echo "intent_context<<EOF"
+    echo "${context}"
+    echo "EOF"
+  } >> "$GITHUB_OUTPUT"
+
   echo "  [intent] type=${intent} reason=${reason} context=${context}"
 }
 
